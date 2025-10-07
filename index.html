@@ -12,7 +12,7 @@
     button { background: #00e1ff; color: #000; cursor: pointer; font-weight: bold; }
     #player-container { margin-top: 20px; }
     iframe, video { width: 80%; max-width: 720px; height: 405px; background: #000; border-radius: 10px; }
-    #chatBox { width: 80%; max-width: 720px; margin: 15px auto; text-align: left; background: #222; padding: 10px; border-radius: 10px; }
+    #chatBox { width: 80%; max-width: 720px; margin: 15px auto; text-align: left; background: #222; padding: 10px; border-radius: 10px; display:none; }
     #messages { height: 200px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     #msgInput { width: 80%; }
     #myIdDisplay { font-size: 14px; opacity: 0.9; margin-top: 8px; letter-spacing: 2px; }
@@ -43,7 +43,7 @@
     <video id="html5Player" controls style="display:none;"></video>
   </div>
 
-  <div id="chatBox" style="display:none;">
+  <div id="chatBox">
     <div id="messages"></div>
     <input id="msgInput" placeholder="Type a message...">
     <button id="sendBtn">Send</button>
@@ -51,6 +51,8 @@
 
   <script>
     let peer, conn;
+    let connOpen = false;
+    const outbox = [];
     let isHost = false;
     let ytPlayer, html5Player = document.getElementById('html5Player');
     let currentType = null; // "yt" or "html5"
@@ -61,6 +63,20 @@
       if (!box) return;
       box.innerHTML += `<div>${msg}</div>`;
       box.scrollTop = box.scrollHeight;
+    }
+
+    // ---- Safe send queue ----
+    function sendSafe(payload) {
+      if (conn && conn.open) {
+        try { conn.send(payload); } catch (e) { console.warn('send failed', e); }
+      } else {
+        outbox.push(payload);
+      }
+    }
+    function flushOutbox() {
+      while (conn && conn.open && outbox.length) {
+        try { conn.send(outbox.shift()); } catch (e) { break; }
+      }
     }
 
     // ---- ID helpers (4-letter codes A–Z only) ----
@@ -89,7 +105,6 @@
     };
 
     async function createPeerWithFourLetterId(maxTries = 8) {
-      // Try several times in case the code is already taken
       for (let attempt = 1; attempt <= maxTries; attempt++) {
         const id = makeFourLetterId();
         try {
@@ -102,7 +117,6 @@
             const onOpen = () => { cleanup(); resolve(); };
             const onErr = (err) => {
               cleanup();
-              // If ID is taken, reject to trigger a retry; otherwise surface the error
               if (err?.type === 'unavailable-id') reject(err);
               else reject(Object.assign(new Error('peer-error'), { cause: err }));
             };
@@ -113,12 +127,10 @@
           // Success
           document.getElementById('myIdDisplay').innerText = `Room ID: ${peer.id}`;
           document.getElementById('videoControls').style.display = 'block';
-          document.getElementById('chatBox').style.display = 'block';
-          peer.on('connection', c => { conn = c; setupConnection(); });
+          peer.on('connection', c => { setupConnection(c); });
           log('✅ Room created. Share your 4-letter ID.');
           return;
         } catch (e) {
-          // If not the last try, destroy and retry with a new ID
           try { peer?.destroy?.(); } catch {}
           if (e?.type === 'unavailable-id' && attempt < maxTries) {
             await new Promise(r => setTimeout(r, 150 + Math.random()*250));
@@ -141,11 +153,10 @@
         alert('Please enter a 4-letter Room ID (A–Z).');
         return;
       }
-      peer = new Peer(); // random caller ID is fine
+      peer = new Peer(); // random caller ID
       peer.on('open', () => {
-        conn = peer.connect(id);
-        setupConnection();
-        document.getElementById('chatBox').style.display = 'block';
+        const c = peer.connect(id);
+        setupConnection(c);
         log(`🔗 Connecting to ${id}...`);
       });
       peer.on('error', (err) => {
@@ -153,8 +164,18 @@
       });
     };
 
-    function setupConnection() {
-      conn.on('open', () => log('✅ Connected!'));
+    // ---- Data connection wiring ----
+    function setupConnection(c) {
+      conn = c || conn;
+      if (!conn) return;
+
+      conn.on('open', () => {
+        connOpen = true;
+        document.getElementById('chatBox').style.display = 'block';
+        log('✅ Connected!');
+        flushOutbox();
+      });
+
       conn.on('data', data => {
         if (data.type === 'chat') {
           log(`<b>Peer:</b> ${data.text}`);
@@ -164,23 +185,26 @@
           syncVideo(data);
         }
       });
-      conn.on('close', () => log('🔌 Disconnected.'));
+
+      conn.on('close', () => { connOpen = false; log('🔌 Disconnected.'); });
       conn.on('error', (e) => log('⚠️ Connection error: ' + (e?.message || e)));
     }
 
+    // ---- Chat ----
     document.getElementById('sendBtn').onclick = () => {
       const msg = document.getElementById('msgInput').value.trim();
       if (!msg) return;
       log(`<b>You:</b> ${msg}`);
-      conn?.send({ type: 'chat', text: msg });
+      sendSafe({ type: 'chat', text: msg });
       document.getElementById('msgInput').value = '';
     };
 
+    // ---- Video loading ----
     document.getElementById('loadVideo').onclick = () => {
       const url = document.getElementById('videoUrl').value.trim();
       if (!url) return;
       loadVideo(url, true);
-      conn?.send?.({ type: 'video', url });
+      sendSafe({ type: 'video', url });
     };
 
     function loadVideo(url, isLocalHost) {
@@ -212,37 +236,38 @@
       return match ? match[1] : null;
     }
 
-    // YouTube event sync
+    // ---- YouTube event sync ----
     function onYTStateChange(event) {
-      if (!isHost || !conn) return;
+      if (!isHost) return;
       const state = event.data;
       if (state === YT.PlayerState.PLAYING) {
-        conn.send({ type: 'sync', action: 'play', time: ytPlayer.getCurrentTime() });
+        sendSafe({ type: 'sync', action: 'play', time: ytPlayer.getCurrentTime() });
       } else if (state === YT.PlayerState.PAUSED) {
-        conn.send({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
+        sendSafe({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
       }
     }
 
-    // HTML5 sync events
+    // ---- HTML5 sync events ----
     html5Player.onplay = () => {
-      if (isHost && conn) conn.send({ type: 'sync', action: 'play', time: html5Player.currentTime });
+      if (isHost) sendSafe({ type: 'sync', action: 'play', time: html5Player.currentTime });
     };
     html5Player.onpause = () => {
-      if (isHost && conn) conn.send({ type: 'sync', action: 'pause', time: html5Player.currentTime });
+      if (isHost) sendSafe({ type: 'sync', action: 'pause', time: html5Player.currentTime });
     };
     html5Player.onseeked = () => {
-      if (isHost && conn) conn.send({ type: 'sync', action: 'seek', time: html5Player.currentTime });
+      if (isHost) sendSafe({ type: 'sync', action: 'seek', time: html5Player.currentTime });
     };
 
-    // Continuous sync from host every 2 seconds
+    // ---- Continuous sync from host every 2 seconds ----
     setInterval(() => {
-      if (!isHost || !conn) return;
+      if (!isHost) return;
       let currentTime = 0;
       if (currentType === 'yt' && ytPlayer) currentTime = ytPlayer.getCurrentTime();
       if (currentType === 'html5' && html5Player) currentTime = html5Player.currentTime;
-      conn.send({ type: 'sync', action: 'update', time: currentTime });
+      sendSafe({ type: 'sync', action: 'update', time: currentTime });
     }, 2000);
 
+    // ---- Apply sync from peer ----
     function syncVideo(data) {
       if (currentType === 'yt' && ytPlayer) {
         if (data.action === 'play') {
