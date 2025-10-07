@@ -2,376 +2,293 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Watch Together — Mobile Friendly</title>
+  <title>Watch Together — Video + Chat Only</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
     :root{
-      --accent:#00e1ff;
-      --accent2:#ff00aa;
-      --bg:#0f0f10;
-      --panel:#17191e;
-      --panel2:#121419;
-      --text:#ebeff3;
-      --muted:#9aa4ae;
-      --border:#232832;
-      --shadow:0 1px 2px rgba(0,0,0,.2), 0 10px 20px rgba(0,0,0,.15);
+      --bg:#0f1013; --panel:#15171c; --border:#232834;
+      --text:#e9eef3; --muted:#98a3ad; --accent:#00e1ff; --peer:#ff72d2;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{
-      margin:0;background:var(--bg);color:var(--text);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.4
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+
+    /* screens */
+    .screen{height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+    .hidden{display:none !important}
+
+    /* connect screen */
+    .connect{
+      width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);
+      border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px
     }
-
-    /* layout */
-    .page{min-height:100dvh;display:flex;flex-direction:column}
-    header{
-      position:sticky;top:0;z-index:10;
-      background:linear-gradient(0deg,var(--panel),var(--panel2));
-      border-bottom:1px solid var(--border);
-      padding:10px 12px
+    .title{font-weight:700;color:var(--accent);text-align:center}
+    input,button{
+      width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--border);
+      background:#0f1116;color:var(--text);font-weight:600
     }
-    .row{max-width:1024px;margin:0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    h1{margin:0;font-size:18px;color:var(--accent)}
-    main{flex:1;padding:12px}
-    .container{max-width:1024px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+    button{background:var(--accent);color:#001218;border-color:transparent;cursor:pointer}
+    .sub{color:var(--muted);font-size:13px;text-align:center}
+    .row{display:flex;gap:8px}
 
-    /* cards */
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
-    .stack{display:flex;flex-direction:column;gap:8px}
-
-    /* controls */
-    .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .bar .grow{flex:1}
-    .badge{padding:4px 10px;border-radius:999px;background:#101217;border:1px solid var(--border);color:var(--muted);font-size:12px}
-    .badge.host{color:var(--accent);background:rgba(0,225,255,.1);border-color:rgba(0,225,255,.3)}
-    .badge.peer{color:var(--accent2);background:rgba(255,0,170,.1);border-color:rgba(255,0,170,.3)}
-
-    input[type=text]{width:100%;padding:12px 12px;border-radius:10px;border:1px solid var(--border);background:#0f1116;color:var(--text)}
-    .btn{
-      padding:12px 14px;border:1px solid var(--border);border-radius:10px;
-      background:#0f1116;color:var(--text);font-weight:600;cursor:pointer;touch-action:manipulation
+    /* session screen: fixed video+chat, no page scroll */
+    .session{
+      height:100vh;display:flex;flex-direction:column;gap:8px;padding:8px
     }
-    .btn.primary{background:var(--accent);color:#001218;border-color:transparent}
-    .btn.warn{background:#ffc857;color:#222;border-color:#e2a900}
-    .btn:active{transform:translateY(1px)}
-    .btn-block{width:100%}
+    .videoWrap{
+      flex:2;min-height:45vh;background:#000;border-radius:12px;overflow:hidden;
+      border:1px solid var(--border);position:relative
+    }
+    video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+    .role-host video{pointer-events:auto}
+    .role-peer video{pointer-events:none} /* guest can't interact */
 
-    /* video */
-    .video-card{padding:0;overflow:hidden}
-    .video-wrap{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
-    .video-wrap iframe,.video-wrap video{position:absolute;inset:0;width:100%;height:100%}
-
-    /* host controls (sticky under header on scroll) */
-    .host-controls{position:sticky;top:62px;z-index:5;border-radius:12px}
-    @media (min-width: 480px){ .host-controls{top:66px} }
-
-    /* chat */
-    .chat{display:flex;flex-direction:column;gap:8px}
+    .chat{
+      flex:1;min-height:32vh;background:var(--panel);border:1px solid var(--border);
+      border-radius:12px;display:flex;flex-direction:column;overflow:hidden
+    }
     #messages{
-      height:28dvh;min-height:180px;max-height:45dvh;overflow:auto;
-      background:#0f1116;border:1px solid var(--border);border-radius:10px;padding:10px
+      flex:1;overflow:auto;padding:10px;background:#0f1116
     }
     .msg{margin:0 0 8px}
-    .me{color:#a5ffd6}
+    .me{color:#b4ffd9}
     .peer{color:#ffd6f6}
-    .sys{color:#9aa4ae}
-    .chat-input{display:flex;gap:8px;align-items:center}
-    .chat-input input{flex:1}
+    .sys{color:var(--muted)}
+    .composer{display:flex;gap:8px;padding:8px;border-top:1px solid var(--border);background:var(--panel)}
+    .composer input{flex:1}
+    .composer button{width:auto}
 
-    /* mobile tweaks */
-    @media (max-width: 480px){
-      header .row{gap:6px}
-      .btn{padding:12px}
-      .host-controls .bar{gap:6px}
-      #messages{height:32dvh}
+    /* tiny badges on top-left */
+    .badges{
+      position:absolute;top:8px;left:8px;display:flex;gap:6px;z-index:2
+    }
+    .badge{
+      background:rgba(0,0,0,.5);backdrop-filter:saturate(120%) blur(6px);
+      color:#eaf2f7;border:1px solid rgba(255,255,255,.12);padding:4px 8px;border-radius:999px;
+      font-size:12px
+    }
+
+    @media (max-width:480px){
+      .session{gap:6px;padding:6px}
+      .chat{min-height:38vh}
+      .composer input, .composer button{padding:12px}
     }
   </style>
 
-  <!-- libs -->
+  <!-- PeerJS & hls.js -->
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://www.youtube.com/iframe_api"></script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
-<div class="page">
-  <header>
+
+<!-- CONNECT SCREEN -->
+<section id="connectScreen" class="screen">
+  <div class="connect">
+    <div class="title">🎬 Watch Together</div>
+    <div class="sub">Only video + chat will be visible after connection.</div>
+    <button id="createBtn">Create Room (Host)</button>
     <div class="row">
-      <h1>🎬 Watch Together</h1>
-      <div class="grow"></div>
-      <button id="createRoom" class="btn">Create Room</button>
-      <input id="roomIdInput" type="text" placeholder="Enter Room ID">
-      <button id="joinRoom" class="btn primary">Join</button>
+      <input id="roomId" placeholder="Enter Room ID (to join)" />
+      <button id="joinBtn">Join</button>
     </div>
-  </header>
+    <div id="connectLog" class="sub"></div>
+  </div>
+</section>
 
-  <main>
-    <div class="container">
-
-      <!-- role/room + exit -->
-      <div class="card bar">
+<!-- SESSION SCREEN -->
+<section id="sessionScreen" class="screen hidden">
+  <div id="sessionRoot" class="session">
+    <div class="videoWrap">
+      <div class="badges">
         <span id="roleBadge" class="badge">Not connected</span>
-        <div class="grow"></div>
-        <button id="exitBtn" class="btn warn">Exit</button>
+        <span id="statusBadge" class="badge">Idle</span>
       </div>
-
-      <!-- URL loader -->
-      <div class="card stack">
-        <input id="videoUrl" type="text" placeholder="Paste YouTube / .mp4 / .m3u8 URL and hit Load" />
-        <button id="loadVideo" class="btn primary btn-block">Load</button>
-      </div>
-
-      <!-- Player -->
-      <div class="card video-card">
-        <div class="video-wrap">
-          <div id="ytPlayer"></div>
-          <video id="html5Player" playsinline controls style="display:none;"></video>
-        </div>
-      </div>
-
-      <!-- Host controls (always visible; only host actions broadcast) -->
-      <div class="card host-controls">
-        <div class="bar">
-          <button id="playBtn" class="btn">▶︎ Play</button>
-          <button id="pauseBtn" class="btn">⏸ Pause</button>
-          <button id="back10" class="btn">⏪ −10s</button>
-          <button id="fwd10" class="btn">⏩ +10s</button>
-          <button id="syncBtn" class="btn">🔁 Resync</button>
-          <div class="grow"></div>
-          <span class="badge">Host actions sync to peer</span>
-        </div>
-      </div>
-
-      <!-- Chat at bottom -->
-      <div class="card chat" id="chatCard">
-        <div id="messages"></div>
-        <div class="chat-input">
-          <input id="msgInput" type="text" placeholder="Type a message and press Enter…" />
-          <button id="sendBtn" class="btn primary">Send</button>
-        </div>
-      </div>
-
+      <video id="player" playsinline></video>
     </div>
-  </main>
-</div>
+    <div class="chat">
+      <div id="messages"></div>
+      <div class="composer">
+        <input id="msgInput" placeholder="Message…  (host: /load <url>)" />
+        <button id="sendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+</section>
 
 <script>
-  // ===== state =====
-  let peer, conn;
-  let isHost = false;
-  let ytPlayer = null;
-  const html5Player = document.getElementById('html5Player');
-  let currentType = null;   // 'yt' | 'html5' | 'hls'
-  let hls = null;           // hls.js instance
+  // ===== Shortcuts =====
+  const $ = id => document.getElementById(id);
+  const connectScreen = $('connectScreen');
+  const sessionScreen = $('sessionScreen');
+  const sessionRoot   = $('sessionRoot');
+  const roleBadge     = $('roleBadge');
+  const statusBadge   = $('statusBadge');
+  const player        = $('player');
+  const messages      = $('messages');
 
-  // ===== ui helpers =====
-  const $ = (id)=>document.getElementById(id);
-  const roleBadge = $('roleBadge');
-  function setRoleBadge(text, role){
-    roleBadge.textContent = text;
-    roleBadge.className = 'badge ' + (role || '');
+  let peer, conn, isHost = false;
+  let hls = null;
+  let videoLoaded = false;
+
+  // ===== UI helpers =====
+  function showConnect(msg){ $('connectLog').textContent = msg || ''; }
+  function toSession(role){
+    connectScreen.classList.add('hidden');
+    sessionScreen.classList.remove('hidden');
+    sessionRoot.classList.toggle('role-host', role==='host');
+    sessionRoot.classList.toggle('role-peer', role!=='host');
+    roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
+    // built-in controls only for host
+    if (role==='host') { player.setAttribute('controls',''); }
+    else { player.removeAttribute('controls'); }
   }
   function log(html, cls){
-    const box = $('messages');
-    const line = document.createElement('div');
-    line.className = 'msg ' + (cls||'');
-    line.innerHTML = html;
-    box.appendChild(line);
-    box.scrollTop = box.scrollHeight;
+    const div = document.createElement('div');
+    div.className = 'msg ' + (cls||'');
+    div.innerHTML = html;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
   }
+  function setStatus(text){ statusBadge.textContent = text; }
 
-  // ===== connection =====
-  $('createRoom').onclick = () => {
+  // ===== Connection flow =====
+  $('createBtn').onclick = () => {
     isHost = true;
     peer = new Peer();
     peer.on('open', id => {
-      setRoleBadge(`Host • Room: ${id}`, 'host');
-      alert(`Room ID: ${id}\nShare this with your friend to join.`);
+      showConnect(`Room ID: ${id}`);
       log(`<span class="sys">Room created: <b>${id}</b></span>`, 'sys');
     });
     peer.on('connection', c => {
-      conn = c; setupConnection();
-      log('<span class="sys">Peer connected</span>', 'sys');
+      conn = c;
+      wireConnection();
+      toSession('host');
+      promptForSource(); // ask once after connect
     });
   };
 
-  $('joinRoom').onclick = () => {
-    const id = $('roomIdInput').value.trim();
-    if (!id) return alert('Enter a Room ID');
+  $('joinBtn').onclick = () => {
+    const id = $('roomId').value.trim();
+    if (!id) return showConnect('Enter a room ID.');
     isHost = false;
     peer = new Peer();
     peer.on('open', () => {
       conn = peer.connect(id);
-      conn.on('open', () => { setupConnection(); setRoleBadge('Peer', 'peer'); log('<span class="sys">Connected to host</span>','sys'); });
+      conn.on('open', () => {
+        wireConnection();
+        toSession('guest');
+      });
     });
   };
 
-  function setupConnection(){
+  function wireConnection(){
     conn.on('data', data => {
-      if (data.type === 'chat') {
-        log(`<b class="peer">Peer:</b> ${escapeHtml(data.text)}`);
-      } else if (data.type === 'video') {
-        loadVideo(data.url, false);
-      } else if (data.type === 'sync') {
+      if (data.type === 'chat'){
+        log(`<b class="peer">Peer:</b> ${escapeHtml(data.text)}`, 'peer');
+      } else if (data.type === 'cmd' && data.cmd === 'load'){
+        loadMedia(data.url, /*broadcast*/ false);
+      } else if (data.type === 'sync'){
         applySync(data);
-      } else if (data.type === 'exit') {
-        alert('Peer exited.'); location.reload();
       }
     });
+    conn.on('close', () => location.reload());
   }
 
-  $('exitBtn').onclick = () => {
-    if (conn) conn.send({type:'exit'});
-    alert('You exited.'); location.reload();
-  };
-
-  // ===== chat =====
-  $('sendBtn').onclick = sendChat;
-  $('msgInput').addEventListener('keydown', (e)=>{
-    if (e.key === 'Enter') sendChat();
+  // ===== Chat (Enter to send, /load for host) =====
+  $('sendBtn').onclick = sendMsg;
+  $('msgInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendMsg();
   });
-  function sendChat(){
-    const el = $('msgInput'); const msg = el.value.trim();
-    if (!msg) return;
-    log(`<b class="me">You:</b> ${escapeHtml(msg)}`);
-    conn?.send({type:'chat', text: msg});
+  function sendMsg(){
+    const el = $('msgInput'); const text = el.value.trim();
+    if (!text) return;
+    if (isHost && text.startsWith('/load ')){
+      const url = text.slice(6).trim();
+      if (url) loadMedia(url, /*broadcast*/ true);
+      el.value = ''; return;
+    }
+    log(`<b class="me">You:</b> ${escapeHtml(text)}`, 'me');
+    conn?.send({type:'chat', text});
     el.value = '';
   }
-  function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 
-  // ===== load video =====
-  $('loadVideo').onclick = () => {
-    const url = $('videoUrl').value.trim();
-    if (!url) return;
-    loadVideo(url, true);
-    conn?.send({type:'video', url});
-  };
-
-  function cleanupPlayers(){
-    // YouTube
-    $('ytPlayer').innerHTML = ''; ytPlayer = null;
-    // hls
-    if (hls) { try{ hls.destroy(); }catch(e){} hls = null; }
-    // html5
-    html5Player.pause();
-    html5Player.removeAttribute('src');
-    html5Player.load();
-    html5Player.style.display = 'none';
+  // ===== Host: initial prompt for URL =====
+  function promptForSource(){
+    const url = prompt('Host: paste media URL (.mp4/.webm or .m3u8)');
+    if (url) loadMedia(url, /*broadcast*/ true);
   }
 
-  function loadVideo(url, isLocalHost){
-    cleanupPlayers();
-    currentType = null;
+  // ===== Load media (HTML5 + HLS) =====
+  function cleanup(){
+    if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+    videoLoaded = false;
+  }
 
-    // YouTube
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      currentType = 'yt';
-      const id = extractYouTubeID(url);
-      new YT.Player('ytPlayer', {
-        height: '100%', width:'100%', videoId:id,
-        events:{
-          onReady: e => {
-            ytPlayer = e.target;
-            if (isHost && conn) setTimeout(()=> conn.send({type:'sync', action:'pause', time: ytPlayer.getCurrentTime()}), 400);
-          },
-          onStateChange: onYTStateChange
-        }
-      });
-      return;
-    }
+  function loadMedia(url, broadcast){
+    cleanup();
+    setStatus('Loading…');
 
-    // HLS
-    if (url.toLowerCase().includes('.m3u8')) {
-      currentType = 'hls';
-      html5Player.style.display = 'block';
-      if (window.Hls && Hls.isSupported()) {
-        hls = new Hls({
-          backBufferLength: 600,
-          liveSyncDuration: 6,
-          liveMaxLatencyDuration: 300
-        });
+    if (url.toLowerCase().includes('.m3u8')){
+      if (window.Hls && Hls.isSupported()){
+        hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
         hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
         hls.loadSource(url);
-        hls.attachMedia(html5Player);
-      } else if (html5Player.canPlayType('application/vnd.apple.mpegurl')) {
-        html5Player.src = url; // Safari
+        hls.attachMedia(player);
+        hls.on(Hls.Events.MANIFEST_PARSED, ()=>{
+          videoLoaded = true; setStatus('Ready');
+          if (!isHost) player.currentTime = 0;
+        });
+      } else if (player.canPlayType('application/vnd.apple.mpegurl')){
+        player.src = url; // Safari/iOS native
+        player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
       } else {
-        log('<span class="sys">This browser cannot play HLS and hls.js is unavailable.</span>', 'sys');
+        setStatus('HLS unsupported in this browser'); return;
       }
-      return;
+    } else {
+      player.src = url;
+      player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
     }
 
-    // Direct file
-    currentType = 'html5';
-    html5Player.src = url;
-    html5Player.style.display = 'block';
-  }
-
-  function extractYouTubeID(url){
-    const re = /^.*(?:youtu\.be\/|v=|\/v\/|embed\/)([^#&?]{11})/;
-    const m = url.match(re); return m ? m[1] : null;
-  }
-
-  // ===== host controls (play/pause/seek ±10/resync) =====
-  $('playBtn').onclick  = ()=> hostAction('play');
-  $('pauseBtn').onclick = ()=> hostAction('pause');
-  $('back10').onclick   = ()=> hostSeekDelta(-10);
-  $('fwd10').onclick    = ()=> hostSeekDelta(+10);
-  $('syncBtn').onclick  = ()=> hostAction('sync');
-
-  function hostAction(kind){
-    if (!isHost || !conn) return;
-    if (currentType === 'yt' && ytPlayer){
-      if (kind==='play') ytPlayer.playVideo();
-      if (kind==='pause') ytPlayer.pauseVideo();
-      const t = ytPlayer.getCurrentTime();
-      conn.send({type:'sync', action: (kind==='sync'?'seek':kind), time: t});
-    } else if (currentType==='html5' || currentType==='hls'){
-      if (kind==='play') html5Player.play().catch(()=>{});
-      if (kind==='pause') html5Player.pause();
-      const t = html5Player.currentTime;
-      conn.send({type:'sync', action: (kind==='sync'?'seek':kind), time: t});
+    if (broadcast) {
+      conn?.send({ type:'cmd', cmd:'load', url });
+      log(`<span class="sys">Loaded: ${escapeHtml(url)}</span>`, 'sys');
+    } else {
+      log(`<span class="sys">Source set by host</span>`, 'sys');
     }
   }
 
-  function hostSeekDelta(delta){
-    if (!isHost || !conn) return;
-    let t = 0;
-    if (currentType==='yt' && ytPlayer){
-      t = Math.max(0, ytPlayer.getCurrentTime() + delta);
-      ytPlayer.seekTo(t, true);
-    } else if ((currentType==='html5' || currentType==='hls') && html5Player.duration){
-      t = Math.max(0, Math.min((isFinite(html5Player.duration)?html5Player.duration:1e12), html5Player.currentTime + delta));
-      html5Player.currentTime = t;
-    }
-    conn.send({type:'sync', action:'seek', time: t});
-  }
-
-  // ===== sync plumbing =====
-  function onYTStateChange(event){
-    if (!isHost || !conn) return;
-    const t = ytPlayer.getCurrentTime();
-    if (event.data === YT.PlayerState.PLAYING) conn.send({type:'sync', action:'play', time:t});
-    if (event.data === YT.PlayerState.PAUSED)  conn.send({type:'sync', action:'pause', time:t});
-  }
-
-  html5Player.onplay   = ()=> { if (isHost && conn) conn.send({type:'sync', action:'play',  time:html5Player.currentTime}); };
-  html5Player.onpause  = ()=> { if (isHost && conn) conn.send({type:'sync', action:'pause', time:html5Player.currentTime}); };
-  html5Player.onseeked = ()=> { if (isHost && conn) conn.send({type:'sync', action:'seek',  time:html5Player.currentTime}); };
+  // ===== Sync: host -> guest via native events =====
+  player.addEventListener('play', () => {
+    if (!isHost || !videoLoaded) return;
+    conn?.send({type:'sync', action:'play', time:player.currentTime});
+  });
+  player.addEventListener('pause', () => {
+    if (!isHost || !videoLoaded) return;
+    conn?.send({type:'sync', action:'pause', time:player.currentTime});
+  });
+  let seekTimer;
+  player.addEventListener('seeked', () => {
+    if (!isHost || !videoLoaded) return;
+    clearTimeout(seekTimer);
+    seekTimer = setTimeout(()=> {
+      conn?.send({type:'sync', action:'seek', time:player.currentTime});
+    }, 80);
+  });
 
   function applySync(msg){
-    if (currentType==='yt' && ytPlayer){
-      ytPlayer.seekTo(msg.time, true);
-      if (msg.action==='play') ytPlayer.playVideo();
-      if (msg.action==='pause') ytPlayer.pauseVideo();
-      return;
-    }
-    if (currentType==='html5' || currentType==='hls'){
-      if (Math.abs(html5Player.currentTime - msg.time) > 0.5) html5Player.currentTime = msg.time;
-      if (msg.action==='play') html5Player.play().catch(()=>{});
-      if (msg.action==='pause') html5Player.pause();
-    }
+    if (!videoLoaded) return;
+    const diff = Math.abs(player.currentTime - msg.time);
+    if (diff > 0.4) player.currentTime = msg.time;
+    if (msg.action === 'play')  player.play().catch(()=>{});
+    if (msg.action === 'pause') player.pause();
   }
+
+  // ===== utils =====
+  function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])) }
+
 </script>
 </body>
 </html>
