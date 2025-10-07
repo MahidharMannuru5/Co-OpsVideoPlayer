@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Watch Together — Fullscreen 50/50 (Desktop & Mobile) + Fit/Fill</title>
+  <title>Watch Together — 50/50 + Fit/Fill + L/R Chat Bubbles</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
     :root{
       --bg:#0c0d0f; --panel:#14171b; --border:#232834;
       --text:#e8eef3; --muted:#97a3ae; --accent:#00e1ff;
+      --me:#00d4b3; --peer:#ff72d2;
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-right: env(safe-area-inset-right, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -74,7 +75,7 @@
     .role-host video{pointer-events:auto}
     .role-guest video{pointer-events:none}
 
-    /* badges over video (top-left) + fit/fill toggle chip */
+    /* badges + fit/fill toggle */
     .badges{
       position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
       user-select:none; pointer-events:none;
@@ -90,16 +91,43 @@
       background:rgba(0,0,0,.55); color:#eaf2f7;
     }
 
-    /* CHAT (fills its half; only vertical scroll; wrap long lines) */
+    /* CHAT (right): vertical scroll only + left/right bubbles */
     .right{display:flex; flex-direction:column; background:var(--panel)}
     .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border)}
     #messages{
       flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; background:#0f1116;
-      word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap; /* wrap long lines; no horizontal scroll */
+      display:flex; flex-direction:column; gap:8px;
     }
-    .msg{margin:0 0 10px}
-    .me{color:#b4ffd9} .peer{color:#ffd6f6} .sys{color:var(--muted)}
-    .composer{display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)}
+    .line{display:flex; width:100%}
+    .from-me{justify-content:flex-end}
+    .from-peer{justify-content:flex-start}
+    .from-sys{justify-content:center}
+
+    .bubble{
+      max-width:88%;
+      padding:10px 12px;
+      border-radius:14px;
+      word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap;
+      border:1px solid transparent;
+      box-shadow:0 1px 2px rgba(0,0,0,.25);
+      font-size:14px;
+    }
+    .bubble.me{
+      background:rgba(0,212,179,.15); border-color:rgba(0,212,179,.35); color:#d9fff7;
+      border-top-right-radius:6px; /* chat-tail feel */
+    }
+    .bubble.peer{
+      background:rgba(255,114,210,.14); border-color:rgba(255,114,210,.35); color:#ffe6f6;
+      border-top-left-radius:6px;
+    }
+    .bubble.sys{
+      background:transparent; border-color:transparent; color:var(--muted);
+      font-size:12px; padding:6px 8px; box-shadow:none;
+    }
+
+    .composer{
+      display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)
+    }
     .composer input{flex:1}
     .composer button{
       padding:10px 12px; border-radius:10px; border:1px solid transparent;
@@ -181,14 +209,11 @@
     fitToggle.textContent = mode === 'fit' ? 'Fit' : 'Fill';
     fitToggle.title = mode === 'fit' ? 'No crop (bars may appear)' : 'Fill (may crop)';
   }
-  // Default: desktop -> fill; mobile -> fit
   function pickDefaultMode(){
     const mobile = window.matchMedia('(max-width: 680px)').matches;
     setFitMode(mobile ? 'fit' : 'fill');
   }
-  fitToggle.addEventListener('click', ()=>{
-    setFitMode(fitMode === 'fit' ? 'fill' : 'fit');
-  });
+  fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
   window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
 
   // ===== UI helpers =====
@@ -202,12 +227,20 @@
     if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
     if (fitMode==null) pickDefaultMode();
   }
-  function log(html, cls){
-    const div = document.createElement('div');
-    div.className = 'msg ' + (cls||'');
-    div.innerHTML = html;
-    messages.appendChild(div);
+
+  // add a bubble to chat
+  function addBubble(text, who){
+    const line = document.createElement('div');
+    line.className = 'line ' + (who==='me' ? 'from-me' : who==='peer' ? 'from-peer' : 'from-sys');
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (who==='me' ? 'me' : who==='peer' ? 'peer' : 'sys');
+    b.innerHTML = text;
+    line.appendChild(b);
+    messages.appendChild(line);
     messages.scrollTop = messages.scrollHeight;
+  }
+  function log(html, cls){
+    addBubble(html, cls==='sys' ? 'sys' : cls==='me' ? 'me' : 'peer');
   }
   function setStatus(text){ statusBadge.textContent = text; }
   function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])) }
@@ -242,7 +275,7 @@
   function wireConnection(){
     conn.on('data', data => {
       if (data.type === 'chat'){
-        log(`<b class="peer">Peer:</b> ${escapeHtml(data.text)}`, 'peer');
+        log(`<b>Peer:</b> ${escapeHtml(data.text)}`, 'peer');
       } else if (data.type === 'cmd' && data.cmd === 'load'){
         loadMedia(data.url, false);
       } else if (data.type === 'sync'){
@@ -263,7 +296,7 @@
       if (url) loadMedia(url, true);
       el.value = ''; return;
     }
-    log(`<b class="me">You:</b> ${escapeHtml(text)}`, 'me');
+    log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
     conn?.send({type:'chat', text});
     el.value = '';
   }
