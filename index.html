@@ -2,76 +2,108 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Watch Together — Video + Chat Only</title>
+  <title>Watch Together — Fullscreen 50/50 (Desktop & Mobile)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
     :root{
-      --bg:#0f1013; --panel:#15171c; --border:#232834;
-      --text:#e9eef3; --muted:#98a3ad; --accent:#00e1ff; --peer:#ff72d2;
+      --bg:#0c0d0f; --panel:#14171b; --border:#232834;
+      --text:#e8eef3; --muted:#97a3ae; --accent:#00e1ff;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      line-height:1.4; overflow:hidden; /* no page scroll */
+      padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    }
 
-    /* screens */
-    .screen{height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+    /* SCREENS */
     .hidden{display:none !important}
-
-    /* connect screen */
+    .connectScreen{
+      height:100vh; width:100vw; display:flex; align-items:center; justify-content:center;
+      padding:16px;
+    }
     .connect{
-      width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);
-      border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px
+      width:min(480px, 92vw);
+      background:var(--panel); border:1px solid var(--border); border-radius:14px;
+      padding:16px; display:flex; flex-direction:column; gap:10px;
     }
-    .title{font-weight:700;color:var(--accent);text-align:center}
+    .title{font-weight:800; color:var(--accent); text-align:center}
+    .sub{color:var(--muted); font-size:13px; text-align:center}
     input,button{
-      width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--border);
-      background:#0f1116;color:var(--text);font-weight:600
+      width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border);
+      background:#0f1116; color:var(--text); font-weight:600;
     }
-    button{background:var(--accent);color:#001218;border-color:transparent;cursor:pointer}
-    .sub{color:var(--muted);font-size:13px;text-align:center}
-    .row{display:flex;gap:8px}
+    button{background:var(--accent); color:#001218; border-color:transparent; cursor:pointer}
+    .row{display:flex; gap:8px} .row input{flex:1}
 
-    /* session screen: fixed video+chat, no page scroll */
+    /* SESSION (fullscreen, no gaps) */
     .session{
-      height:100vh;display:flex;flex-direction:column;gap:8px;padding:8px
+      height:100vh; width:100vw; display:grid; gap:0;
+      grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; /* desktop: side-by-side */
     }
-    .videoWrap{
-      flex:2;min-height:45vh;background:#000;border-radius:12px;overflow:hidden;
-      border:1px solid var(--border);position:relative
+    /* mobile: stack 50/50 vertically */
+    @media (max-width: 680px){
+      .session{
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr; /* top video, bottom chat */
+      }
     }
-    video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
-    .role-host video{pointer-events:auto}
-    .role-peer video{pointer-events:none} /* guest can't interact */
 
+    /* LEFT: video fills its half completely, no borders/padding */
+    .left, .right { min-width:0; min-height:0; }
+    .left{ position:relative; background:#000; }
+    .videoWrap{
+      position:absolute; inset:0; /* fill entire left pane */
+      background:#000; overflow:hidden;
+    }
+    video{
+      position:absolute; inset:0; width:100%; height:100%;
+      object-fit:cover;  /* fill left/right with no gaps; may crop top/bottom */
+      background:#000;
+    }
+    /* host vs guest interaction */
+    .role-host video{ pointer-events:auto }
+    .role-guest video{ pointer-events:none }
+
+    /* status badges over video (top-left), non-intrusive */
+    .badges{
+      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
+      user-select:none; pointer-events:none;
+    }
+    .badge{
+      background:rgba(0,0,0,.45); color:#eaf2f7; border:1px solid rgba(255,255,255,.12);
+      padding:4px 8px; border-radius:999px; font-size:12px; backdrop-filter:saturate(120%) blur(6px);
+    }
+
+    /* RIGHT: chat fills its half; only messages scroll */
+    .right{ display:flex; flex-direction:column; background:var(--panel) }
     .chat{
-      flex:1;min-height:32vh;background:var(--panel);border:1px solid var(--border);
-      border-radius:12px;display:flex;flex-direction:column;overflow:hidden
+      flex:1; display:flex; flex-direction:column; min-height:0;
+      border-left:1px solid var(--border);
     }
     #messages{
-      flex:1;overflow:auto;padding:10px;background:#0f1116
+      flex:1; min-height:0; overflow:auto; padding:12px; background:#0f1116;
     }
-    .msg{margin:0 0 8px}
+    .msg{margin:0 0 10px}
     .me{color:#b4ffd9}
     .peer{color:#ffd6f6}
     .sys{color:var(--muted)}
-    .composer{display:flex;gap:8px;padding:8px;border-top:1px solid var(--border);background:var(--panel)}
-    .composer input{flex:1}
-    .composer button{width:auto}
-
-    /* tiny badges on top-left */
-    .badges{
-      position:absolute;top:8px;left:8px;display:flex;gap:6px;z-index:2
+    .composer{
+      display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
     }
-    .badge{
-      background:rgba(0,0,0,.5);backdrop-filter:saturate(120%) blur(6px);
-      color:#eaf2f7;border:1px solid rgba(255,255,255,.12);padding:4px 8px;border-radius:999px;
-      font-size:12px
+    .composer input{
+      flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:10px;
+      background:#0f1116; color:var(--text);
     }
-
-    @media (max-width:480px){
-      .session{gap:6px;padding:6px}
-      .chat{min-height:38vh}
-      .composer input, .composer button{padding:12px}
+    .composer button{
+      padding:12px 14px; border-radius:10px; border:1px solid transparent;
+      background:var(--accent); color:#001218; font-weight:700; cursor:pointer;
     }
   </style>
 
@@ -81,11 +113,11 @@
 </head>
 <body>
 
-<!-- CONNECT SCREEN -->
-<section id="connectScreen" class="screen">
+<!-- CONNECT -->
+<section id="connectScreen" class="connectScreen">
   <div class="connect">
     <div class="title">🎬 Watch Together</div>
-    <div class="sub">Only video + chat will be visible after connection.</div>
+    <div class="sub">Desktop: Left video / Right chat (50/50). Mobile: Top video / Bottom chat (50/50).</div>
     <button id="createBtn">Create Room (Host)</button>
     <div class="row">
       <input id="roomId" placeholder="Enter Room ID (to join)" />
@@ -95,9 +127,10 @@
   </div>
 </section>
 
-<!-- SESSION SCREEN -->
-<section id="sessionScreen" class="screen hidden">
-  <div id="sessionRoot" class="session">
+<!-- SESSION -->
+<section id="sessionScreen" class="session hidden">
+  <!-- LEFT: VIDEO -->
+  <div class="left">
     <div class="videoWrap">
       <div class="badges">
         <span id="roleBadge" class="badge">Not connected</span>
@@ -105,6 +138,10 @@
       </div>
       <video id="player" playsinline></video>
     </div>
+  </div>
+
+  <!-- RIGHT: CHAT -->
+  <div class="right">
     <div class="chat">
       <div id="messages"></div>
       <div class="composer">
@@ -120,11 +157,10 @@
   const $ = id => document.getElementById(id);
   const connectScreen = $('connectScreen');
   const sessionScreen = $('sessionScreen');
-  const sessionRoot   = $('sessionRoot');
-  const roleBadge     = $('roleBadge');
-  const statusBadge   = $('statusBadge');
-  const player        = $('player');
-  const messages      = $('messages');
+  const roleBadge = $('roleBadge');
+  const statusBadge = $('statusBadge');
+  const player = $('player');
+  const messages = $('messages');
 
   let peer, conn, isHost = false;
   let hls = null;
@@ -135,12 +171,10 @@
   function toSession(role){
     connectScreen.classList.add('hidden');
     sessionScreen.classList.remove('hidden');
-    sessionRoot.classList.toggle('role-host', role==='host');
-    sessionRoot.classList.toggle('role-peer', role!=='host');
+    sessionScreen.classList.toggle('role-host', role==='host');
+    sessionScreen.classList.toggle('role-guest', role!=='host');
     roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
-    // built-in controls only for host
-    if (role==='host') { player.setAttribute('controls',''); }
-    else { player.removeAttribute('controls'); }
+    if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
   }
   function log(html, cls){
     const div = document.createElement('div');
@@ -150,8 +184,9 @@
     messages.scrollTop = messages.scrollHeight;
   }
   function setStatus(text){ statusBadge.textContent = text; }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])) }
 
-  // ===== Connection flow =====
+  // ===== Connect flow =====
   $('createBtn').onclick = () => {
     isHost = true;
     peer = new Peer();
@@ -160,10 +195,7 @@
       log(`<span class="sys">Room created: <b>${id}</b></span>`, 'sys');
     });
     peer.on('connection', c => {
-      conn = c;
-      wireConnection();
-      toSession('host');
-      promptForSource(); // ask once after connect
+      conn = c; wireConnection(); toSession('host'); promptForSource();
     });
   };
 
@@ -174,10 +206,7 @@
     peer = new Peer();
     peer.on('open', () => {
       conn = peer.connect(id);
-      conn.on('open', () => {
-        wireConnection();
-        toSession('guest');
-      });
+      conn.on('open', () => { wireConnection(); toSession('guest'); });
     });
   };
 
@@ -186,7 +215,7 @@
       if (data.type === 'chat'){
         log(`<b class="peer">Peer:</b> ${escapeHtml(data.text)}`, 'peer');
       } else if (data.type === 'cmd' && data.cmd === 'load'){
-        loadMedia(data.url, /*broadcast*/ false);
+        loadMedia(data.url, false);
       } else if (data.type === 'sync'){
         applySync(data);
       }
@@ -196,15 +225,13 @@
 
   // ===== Chat (Enter to send, /load for host) =====
   $('sendBtn').onclick = sendMsg;
-  $('msgInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') sendMsg();
-  });
+  $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
   function sendMsg(){
-    const el = $('msgInput'); const text = el.value.trim();
+    const el = $('msgInput'), text = el.value.trim();
     if (!text) return;
     if (isHost && text.startsWith('/load ')){
       const url = text.slice(6).trim();
-      if (url) loadMedia(url, /*broadcast*/ true);
+      if (url) loadMedia(url, true);
       el.value = ''; return;
     }
     log(`<b class="me">You:</b> ${escapeHtml(text)}`, 'me');
@@ -212,18 +239,16 @@
     el.value = '';
   }
 
-  // ===== Host: initial prompt for URL =====
+  // ===== Host: initial URL prompt =====
   function promptForSource(){
     const url = prompt('Host: paste media URL (.mp4/.webm or .m3u8)');
-    if (url) loadMedia(url, /*broadcast*/ true);
+    if (url) loadMedia(url, true);
   }
 
-  // ===== Load media (HTML5 + HLS) =====
+  // ===== Media loading (HTML5 + HLS) =====
   function cleanup(){
     if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
-    player.pause();
-    player.removeAttribute('src');
-    player.load();
+    player.pause(); player.removeAttribute('src'); player.load();
     videoLoaded = false;
   }
 
@@ -237,30 +262,25 @@
         hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
         hls.loadSource(url);
         hls.attachMedia(player);
-        hls.on(Hls.Events.MANIFEST_PARSED, ()=>{
-          videoLoaded = true; setStatus('Ready');
-          if (!isHost) player.currentTime = 0;
-        });
+        hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
       } else if (player.canPlayType('application/vnd.apple.mpegurl')){
-        player.src = url; // Safari/iOS native
-        player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+        player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
       } else {
         setStatus('HLS unsupported in this browser'); return;
       }
     } else {
-      player.src = url;
-      player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+      player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
     }
 
-    if (broadcast) {
-      conn?.send({ type:'cmd', cmd:'load', url });
+    if (broadcast){
+      conn?.send({type:'cmd', cmd:'load', url});
       log(`<span class="sys">Loaded: ${escapeHtml(url)}</span>`, 'sys');
     } else {
       log(`<span class="sys">Source set by host</span>`, 'sys');
     }
   }
 
-  // ===== Sync: host -> guest via native events =====
+  // ===== Sync host -> guest =====
   player.addEventListener('play', () => {
     if (!isHost || !videoLoaded) return;
     conn?.send({type:'sync', action:'play', time:player.currentTime});
@@ -285,10 +305,6 @@
     if (msg.action === 'play')  player.play().catch(()=>{});
     if (msg.action === 'pause') player.pause();
   }
-
-  // ===== utils =====
-  function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])) }
-
 </script>
 </body>
 </html>
