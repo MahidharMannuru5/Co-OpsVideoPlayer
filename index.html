@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Watch Together (No Backend)</title>
+  <title>Watch Together (Synced)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
@@ -112,7 +112,6 @@
     };
 
     function loadVideo(url, isLocalHost) {
-      // detect type
       document.getElementById('ytPlayer').innerHTML = "";
       html5Player.style.display = 'none';
       currentType = null;
@@ -141,7 +140,7 @@
       return match ? match[1] : null;
     }
 
-    // YouTube sync
+    // YouTube event sync
     function onYTStateChange(event) {
       if (!isHost || !conn) return;
       const state = event.data;
@@ -152,7 +151,7 @@
       }
     }
 
-    // HTML5 sync
+    // HTML5 sync events
     html5Player.onplay = () => {
       if (isHost && conn) conn.send({ type: 'sync', action: 'play', time: html5Player.currentTime });
     };
@@ -163,6 +162,15 @@
       if (isHost && conn) conn.send({ type: 'sync', action: 'seek', time: html5Player.currentTime });
     };
 
+    // Continuous sync from host every 2 seconds
+    setInterval(() => {
+      if (!isHost || !conn) return;
+      let currentTime = 0;
+      if (currentType === 'yt' && ytPlayer) currentTime = ytPlayer.getCurrentTime();
+      if (currentType === 'html5' && html5Player) currentTime = html5Player.currentTime;
+      conn.send({ type: 'sync', action: 'update', time: currentTime });
+    }, 2000);
+
     function syncVideo(data) {
       if (currentType === 'yt' && ytPlayer) {
         if (data.action === 'play') {
@@ -170,11 +178,20 @@
           ytPlayer.playVideo();
         } else if (data.action === 'pause') {
           ytPlayer.pauseVideo();
+        } else if (data.action === 'update') {
+          const diff = Math.abs(ytPlayer.getCurrentTime() - data.time);
+          if (diff > 0.5) ytPlayer.seekTo(data.time, true);
         }
       } else if (currentType === 'html5') {
-        if (Math.abs(html5Player.currentTime - data.time) > 0.5) html5Player.currentTime = data.time;
-        if (data.action === 'play') html5Player.play();
-        if (data.action === 'pause') html5Player.pause();
+        if (data.action === 'play') {
+          html5Player.currentTime = data.time;
+          html5Player.play();
+        } else if (data.action === 'pause') {
+          html5Player.pause();
+        } else if (data.action === 'update') {
+          const diff = Math.abs(html5Player.currentTime - data.time);
+          if (diff > 0.5) html5Player.currentTime = data.time;
+        }
       }
     }
   </script>
