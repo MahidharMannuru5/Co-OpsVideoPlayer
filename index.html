@@ -18,15 +18,29 @@
     body{
       margin:0; background:var(--bg); color:var(--text);
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-      line-height:1.4; overflow:hidden; /* no page scroll */
+      line-height:1.4; overflow:hidden;
       padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
     }
-
-    /* SCREENS */
     .hidden{display:none !important}
+
+    /* --- Buttons/Inputs (compact) --- */
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+      background:#0f1116; color:var(--text); font-weight:600; font-size:14px;
+      cursor:pointer; line-height:1; white-space:nowrap;
+    }
+    .btn-primary{background:var(--accent); color:#001218; border-color:transparent}
+    .btn-sm{padding:10px 12px; min-width:96px}
+    input[type=text]{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+      background:#0f1116; color:var(--text); font-size:14px; line-height:1;
+    }
+    input::placeholder{color:var(--muted)}
+
+    /* --- Connect screen --- */
     .connectScreen{
-      height:100vh; width:100vw; display:flex; align-items:center; justify-content:center;
-      padding:16px;
+      height:100vh; width:100vw; display:flex; align-items:center; justify-content:center; padding:16px;
     }
     .connect{
       width:min(480px, 92vw);
@@ -35,75 +49,42 @@
     }
     .title{font-weight:800; color:var(--accent); text-align:center}
     .sub{color:var(--muted); font-size:13px; text-align:center}
-    input,button{
-      width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border);
-      background:#0f1116; color:var(--text); font-weight:600;
-    }
-    button{background:var(--accent); color:#001218; border-color:transparent; cursor:pointer}
-    .row{display:flex; gap:8px} .row input{flex:1}
+    .row{display:flex; gap:8px; align-items:center}
+    .row input{flex:1}
 
-    /* SESSION (fullscreen, no gaps) */
+    /* --- Session (fullscreen split) --- */
     .session{
       height:100vh; width:100vw; display:grid; gap:0;
-      grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; /* desktop: side-by-side */
+      grid-template-columns: 1fr 1fr; grid-template-rows: 1fr;
     }
-    /* mobile: stack 50/50 vertically */
     @media (max-width: 680px){
-      .session{
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr 1fr; /* top video, bottom chat */
-      }
+      .session{grid-template-columns:1fr; grid-template-rows: 1fr 1fr;}
     }
+    .left,.right{min-width:0; min-height:0}
+    .left{position:relative; background:#000}
+    .videoWrap{position:absolute; inset:0; background:#000; overflow:hidden}
+    video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000}
+    .role-host video{pointer-events:auto}
+    .role-guest video{pointer-events:none}
 
-    /* LEFT: video fills its half completely, no borders/padding */
-    .left, .right { min-width:0; min-height:0; }
-    .left{ position:relative; background:#000; }
-    .videoWrap{
-      position:absolute; inset:0; /* fill entire left pane */
-      background:#000; overflow:hidden;
-    }
-    video{
-      position:absolute; inset:0; width:100%; height:100%;
-      object-fit:cover;  /* fill left/right with no gaps; may crop top/bottom */
-      background:#000;
-    }
-    /* host vs guest interaction */
-    .role-host video{ pointer-events:auto }
-    .role-guest video{ pointer-events:none }
-
-    /* status badges over video (top-left), non-intrusive */
     .badges{
-      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
-      user-select:none; pointer-events:none;
+      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2; user-select:none; pointer-events:none;
     }
     .badge{
       background:rgba(0,0,0,.45); color:#eaf2f7; border:1px solid rgba(255,255,255,.12);
       padding:4px 8px; border-radius:999px; font-size:12px; backdrop-filter:saturate(120%) blur(6px);
     }
 
-    /* RIGHT: chat fills its half; only messages scroll */
-    .right{ display:flex; flex-direction:column; background:var(--panel) }
-    .chat{
-      flex:1; display:flex; flex-direction:column; min-height:0;
-      border-left:1px solid var(--border);
-    }
-    #messages{
-      flex:1; min-height:0; overflow:auto; padding:12px; background:#0f1116;
-    }
+    .right{display:flex; flex-direction:column; background:#14171b}
+    .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border)}
+    #messages{flex:1; min-height:0; overflow:auto; padding:12px; background:#0f1116}
     .msg{margin:0 0 10px}
-    .me{color:#b4ffd9}
-    .peer{color:#ffd6f6}
-    .sys{color:var(--muted)}
-    .composer{
-      display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
-    }
-    .composer input{
-      flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:10px;
-      background:#0f1116; color:var(--text);
-    }
-    .composer button{
-      padding:12px 14px; border-radius:10px; border:1px solid transparent;
-      background:var(--accent); color:#001218; font-weight:700; cursor:pointer;
+    .me{color:#b4ffd9} .peer{color:#ffd6f6} .sys{color:var(--muted)}
+    .composer{display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:#14171b}
+    .composer input{flex:1}
+    .composer button{ /* compact send button */
+      padding:10px 12px; border-radius:10px; border:1px solid transparent;
+      background:var(--accent); color:#001218; font-weight:700;
     }
   </style>
 
@@ -117,12 +98,15 @@
 <section id="connectScreen" class="connectScreen">
   <div class="connect">
     <div class="title">🎬 Watch Together</div>
-    <div class="sub">Desktop: Left video / Right chat (50/50). Mobile: Top video / Bottom chat (50/50).</div>
-    <button id="createBtn">Create Room (Host)</button>
+    <div class="sub">Desktop: Left video / Right chat (50/50). Mobile: Top/Bottom (50/50).</div>
+
+    <button id="createBtn" class="btn btn-primary">Create Room (Host)</button>
+
     <div class="row">
-      <input id="roomId" placeholder="Enter Room ID (to join)" />
-      <button id="joinBtn">Join</button>
+      <input id="roomId" type="text" placeholder="Room ID" autofocus />
+      <button id="joinBtn" class="btn btn-primary btn-sm">Join</button>
     </div>
+
     <div id="connectLog" class="sub"></div>
   </div>
 </section>
@@ -145,8 +129,8 @@
     <div class="chat">
       <div id="messages"></div>
       <div class="composer">
-        <input id="msgInput" placeholder="Message…  (host: /load <url>)" />
-        <button id="sendBtn">Send</button>
+        <input id="msgInput" type="text" placeholder="Message…  (host: /load &lt;url&gt;)" />
+        <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
       </div>
     </div>
   </div>
@@ -199,16 +183,19 @@
     });
   };
 
-  $('joinBtn').onclick = () => {
+  $('joinBtn').onclick = tryJoin;
+  $('roomId').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
+
+  function tryJoin(){
     const id = $('roomId').value.trim();
-    if (!id) return showConnect('Enter a room ID.');
+    if (!id) { showConnect('Enter a room ID.'); $('roomId').focus(); return; }
     isHost = false;
     peer = new Peer();
     peer.on('open', () => {
       conn = peer.connect(id);
       conn.on('open', () => { wireConnection(); toSession('guest'); });
     });
-  };
+  }
 
   function wireConnection(){
     conn.on('data', data => {
@@ -305,6 +292,9 @@
     if (msg.action === 'play')  player.play().catch(()=>{});
     if (msg.action === 'pause') player.pause();
   }
+
+  // autofocus the Room ID on load
+  window.addEventListener('load', ()=> $('roomId')?.focus());
 </script>
 </body>
 </html>
