@@ -1,3 +1,4 @@
 streamlit
 playwright
 streamlit-player
+httpx
