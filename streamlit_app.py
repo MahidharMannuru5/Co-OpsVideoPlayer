@@ -1,289 +1,70 @@
 import streamlit as st
 import streamlit.components.v1 as components
+from playwright.sync_api import sync_playwright
 
-st.set_page_config(page_title="Watch Together", layout="wide")
+st.set_page_config(layout="wide")
+st.markdown("<h2 style='text-align: center;'>🎬 WatchTogether</h2>", unsafe_allow_html=True)
 
-st.markdown("""
-    <h2 style="text-align:center;color:#00e1ff;">🎬 Watch Together</h2>
-""", unsafe_allow_html=True)
+# Room Connection UI
+if "connected" not in st.session_state:
+    st.session_state.connected = False
 
-# Load the static HTML/JS/PeerJS interface
-components.html("""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Watch Together (Clean Layout)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    body {
-      font-family: sans-serif;
-      background: #111;
-      color: #eee;
-      margin: 0;
-      padding: 0;
-    }
-    h2 {
-      color: #00e1ff;
-      text-align: center;
-      padding-top: 10px;
-    }
-    #layout {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 10px;
-    }
-    #topBar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      width: 100%;
-      max-width: 800px;
-      margin-bottom: 10px;
-    }
-    #userLabels {
-      display: flex;
-      justify-content: space-between;
-      width: 100%;
-      font-weight: bold;
-      padding: 0 20px;
-    }
-    #leftUser {
-      color: #00e1ff;
-    }
-    #rightUser {
-      color: #ff00aa;
-      text-align: right;
-    }
-    input, button {
-      padding: 8px;
-      margin: 5px;
-      border-radius: 5px;
-      border: none;
-    }
-    button {
-      background: #00e1ff;
-      color: #000;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    input {
-      width: 200px;
-    }
-    #player-container iframe, #player-container video {
-      width: 100%;
-      max-width: 800px;
-      height: 450px;
-      background: #000;
-      border-radius: 10px;
-    }
-    #chatBox {
-      width: 100%;
-      max-width: 800px;
-      background: #222;
-      padding: 10px;
-      border-radius: 10px;
-      margin-top: 15px;
-    }
-    #messages {
-      height: 200px;
-      overflow-y: auto;
-      background: #111;
-      padding: 10px;
-      border-radius: 5px;
-      margin-bottom: 10px;
-    }
-    #msgInput {
-      width: 75%;
-    }
-    #controls, #videoControls {
-      text-align: center;
-      margin-top: 10px;
-    }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://www.youtube.com/iframe_api"></script>
-</head>
-<body>
-  <div id="controls">
-    <button id="createRoom">Create Room</button>
-    <input id="roomIdInput" placeholder="Enter Room ID">
-    <button id="joinRoom">Join Room</button>
-  </div>
+if not st.session_state.connected:
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("🔵 Create Room"):
+            st.session_state.is_host = True
+            st.session_state.connected = True
+    with col2:
+        room_id = st.text_input("Enter Room ID to Join")
+    with col3:
+        if st.button("🔗 Join Room") and room_id:
+            st.session_state.is_host = False
+            st.session_state.connected = True
 
-  <div id="layout" style="display:none;">
-    <div id="topBar">
-      <div id="userLabels">
-        <div id="leftUser">You</div>
-        <div id="rightUser">Peer</div>
-      </div>
-      <button id="exitBtn">Exit</button>
-    </div>
+# Function to extract direct video URL from xHamster-like sites using Playwright
+def extract_video_url(page_url):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(page_url)
+        page.wait_for_timeout(5000)  # wait for elements
+        video_tags = page.query_selector_all("video source")
+        for tag in video_tags:
+            src = tag.get_attribute("src")
+            if src and (".mp4" in src or ".m3u8" in src):
+                browser.close()
+                return src
+        browser.close()
+    return None
 
-    <div id="videoControls">
-      <input id="videoUrl" placeholder="Paste video URL here...">
-      <button id="loadVideo">Load</button>
-    </div>
+if st.session_state.connected:
+    st.markdown("---")
 
-    <div id="player-container">
-      <div id="ytPlayer"></div>
-      <video id="html5Player" controls style="display:none;"></video>
-    </div>
+    # Layout: Video on top, chat on bottom
+    url = st.text_input("Paste video page URL here:")
+    load_btn = st.button("▶️ Load & Sync Video")
+    placeholder = st.empty()
 
-    <div id="chatBox">
-      <div id="messages"></div>
-      <input id="msgInput" placeholder="Type a message...">
-      <button id="sendBtn">Send</button>
-    </div>
-  </div>
+    if load_btn and url:
+        with st.spinner("🔍 Extracting video URL..."):
+            video_src = extract_video_url(url)
+            if video_src:
+                st.success("Video URL loaded successfully!")
+                # Load player
+                components.html(f"""
+                    <video id="syncVideo" width="100%" height="450" controls>
+                      <source src="{video_src}" type="video/mp4">
+                    </video>
+                    <script>
+                        const video = document.getElementById('syncVideo');
+                        // You can add PeerJS sync here later
+                    </script>
+                """, height=480)
+            else:
+                st.error("⚠️ Unable to extract video stream. Try a different link.")
 
-  <script>
-    let peer, conn;
-    let isHost = false;
-    let ytPlayer, html5Player = document.getElementById('html5Player');
-    let currentType = null;
-
-    function log(msg) {
-      const box = document.getElementById('messages');
-      box.innerHTML += `<div>${msg}</div>`;
-      box.scrollTop = box.scrollHeight;
-    }
-
-    function toggleUI(connected) {
-      document.getElementById('controls').style.display = connected ? 'none' : 'block';
-      document.getElementById('layout').style.display = connected ? 'flex' : 'none';
-    }
-
-    document.getElementById('createRoom').onclick = () => {
-      isHost = true;
-      peer = new Peer();
-      peer.on('open', id => {
-        alert(`Room ID: ${id} (share it with your friend)`);
-      });
-      peer.on('connection', c => {
-        conn = c;
-        setupConnection();
-        toggleUI(true);
-      });
-    };
-
-    document.getElementById('joinRoom').onclick = () => {
-      const id = document.getElementById('roomIdInput').value.trim();
-      peer = new Peer();
-      peer.on('open', () => {
-        conn = peer.connect(id);
-        conn.on('open', () => {
-          setupConnection();
-          toggleUI(true);
-        });
-      });
-    };
-
-    function setupConnection() {
-      conn.on('data', data => {
-        if (data.type === 'chat') {
-          log(`<b>Peer:</b> ${data.text}`);
-        } else if (data.type === 'video') {
-          loadVideo(data.url, false);
-        } else if (data.type === 'sync') {
-          syncVideo(data);
-        } else if (data.type === 'exit') {
-          alert("Peer has exited the session.");
-          location.reload();
-        }
-      });
-    }
-
-    document.getElementById('sendBtn').onclick = () => {
-      const msg = document.getElementById('msgInput').value.trim();
-      if (!msg) return;
-      log(`<b>You:</b> ${msg}`);
-      conn?.send({ type: 'chat', text: msg });
-      document.getElementById('msgInput').value = '';
-    };
-
-    document.getElementById('loadVideo').onclick = () => {
-      const url = document.getElementById('videoUrl').value.trim();
-      loadVideo(url, true);
-      conn?.send({ type: 'video', url });
-    };
-
-    document.getElementById('exitBtn').onclick = () => {
-      if (conn) conn.send({ type: 'exit' });
-      alert("You have exited.");
-      location.reload();
-    };
-
-    function loadVideo(url, isLocalHost) {
-      document.getElementById('ytPlayer').innerHTML = "";
-      html5Player.style.display = 'none';
-      currentType = null;
-
-      if (url.includes('youtube.com') || url.includes('youtu.be')) {
-        currentType = 'yt';
-        const id = extractYouTubeID(url);
-        new YT.Player('ytPlayer', {
-          height: '450',
-          width: '800',
-          videoId: id,
-          events: {
-            onReady: e => {
-              ytPlayer = e.target;
-              if (!isHost) return;
-              setTimeout(() => {
-                conn.send({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
-              }, 500);
-            },
-            onStateChange: onYTStateChange
-          }
-        });
-      } else {
-        currentType = 'html5';
-        html5Player.src = url;
-        html5Player.style.display = 'block';
-      }
-    }
-
-    function extractYouTubeID(url) {
-      const regExp = /^.*(?:youtu\.be\/|v=|\/v\/|embed\/)([^#&?]{11})/;
-      const match = url.match(regExp);
-      return match ? match[1] : null;
-    }
-
-    function onYTStateChange(event) {
-      if (!isHost || !conn) return;
-      const state = event.data;
-      const time = ytPlayer.getCurrentTime();
-      if (state === YT.PlayerState.PLAYING) {
-        conn.send({ type: 'sync', action: 'play', time });
-      } else if (state === YT.PlayerState.PAUSED) {
-        conn.send({ type: 'sync', action: 'pause', time });
-      }
-    }
-
-    html5Player.onplay = () => {
-      if (isHost && conn) conn.send({ type: 'sync', action: 'play', time: html5Player.currentTime });
-    };
-    html5Player.onpause = () => {
-      if (isHost && conn) conn.send({ type: 'sync', action: 'pause', time: html5Player.currentTime });
-    };
-    html5Player.onseeked = () => {
-      if (isHost && conn) conn.send({ type: 'sync', action: 'seek', time: html5Player.currentTime });
-    };
-
-    function syncVideo(data) {
-      if (currentType === 'yt' && ytPlayer) {
-        ytPlayer.seekTo(data.time, true);
-        if (data.action === 'play') ytPlayer.playVideo();
-        else if (data.action === 'pause') ytPlayer.pauseVideo();
-      } else if (currentType === 'html5') {
-        if (Math.abs(html5Player.currentTime - data.time) > 0.5) html5Player.currentTime = data.time;
-        if (data.action === 'play') html5Player.play();
-        if (data.action === 'pause') html5Player.pause();
-      }
-    }
-  </script>
-</body>
-</html>
-""", height=900, scrolling=True)
+    st.markdown("### 💬 Chat")
+    chat = st.text_input("Type a message:")
+    if chat:
+        st.write(f"**You:** {chat}")
