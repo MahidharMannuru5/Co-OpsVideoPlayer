@@ -38,28 +38,16 @@
       font-weight: bold;
       padding: 0 20px;
     }
-    #leftUser {
-      color: #00e1ff;
-    }
-    #rightUser {
-      color: #ff00aa;
-      text-align: right;
-    }
+    #leftUser { color: #00e1ff; }
+    #rightUser { color: #ff00aa; text-align: right; }
     input, button {
       padding: 8px;
       margin: 5px;
       border-radius: 5px;
       border: none;
     }
-    button {
-      background: #00e1ff;
-      color: #000;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    input {
-      width: 200px;
-    }
+    button { background: #00e1ff; color: #000; cursor: pointer; font-weight: bold; }
+    input { width: 200px; }
     #player-container iframe, #player-container video {
       width: 100%;
       max-width: 800px;
@@ -83,16 +71,16 @@
       border-radius: 5px;
       margin-bottom: 10px;
     }
-    #msgInput {
-      width: 75%;
-    }
-    #controls, #videoControls {
-      text-align: center;
-      margin-top: 10px;
-    }
+    #msgInput { width: 75%; }
+    #controls, #videoControls { text-align: center; margin-top: 10px; }
   </style>
+
+  <!-- PeerJS -->
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- YouTube Iframe API -->
   <script src="https://www.youtube.com/iframe_api"></script>
+  <!-- hls.js for .m3u8 playback on non-Safari browsers -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
   <h2>🎬 Watch Together</h2>
@@ -113,13 +101,13 @@
     </div>
 
     <div id="videoControls">
-      <input id="videoUrl" placeholder="Paste video URL here...">
+      <input id="videoUrl" placeholder="Paste video URL here... (.mp4, YouTube, or .m3u8)">
       <button id="loadVideo">Load</button>
     </div>
 
     <div id="player-container">
       <div id="ytPlayer"></div>
-      <video id="html5Player" controls style="display:none;"></video>
+      <video id="html5Player" controls style="display:none;" playsinline></video>
     </div>
 
     <div id="chatBox">
@@ -132,8 +120,10 @@
   <script>
     let peer, conn;
     let isHost = false;
-    let ytPlayer, html5Player = document.getElementById('html5Player');
-    let currentType = null;
+    let ytPlayer;
+    const html5Player = document.getElementById('html5Player');
+    let currentType = null; // 'yt' | 'html5' | 'hls'
+    let hls = null;         // hls.js instance
 
     function log(msg) {
       const box = document.getElementById('messages');
@@ -206,11 +196,29 @@
       location.reload();
     };
 
-    function loadVideo(url, isLocalHost) {
+    function cleanupPlayers() {
+      // Stop/destroy YouTube
       document.getElementById('ytPlayer').innerHTML = "";
+      ytPlayer = null;
+
+      // Stop/destroy hls.js
+      if (hls) {
+        try { hls.destroy(); } catch (_) {}
+        hls = null;
+      }
+
+      // Reset HTML5 video
+      html5Player.pause();
+      html5Player.removeAttribute('src');
+      html5Player.load();
       html5Player.style.display = 'none';
+    }
+
+    function loadVideo(url, isLocalHost) {
+      cleanupPlayers();
       currentType = null;
 
+      // YouTube detection
       if (url.includes('youtube.com') || url.includes('youtu.be')) {
         currentType = 'yt';
         const id = extractYouTubeID(url);
@@ -221,19 +229,47 @@
           events: {
             onReady: e => {
               ytPlayer = e.target;
+              // host sends initial pause+time to sync
               if (!isHost) return;
               setTimeout(() => {
-                conn.send({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
+                conn?.send({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
               }, 500);
             },
             onStateChange: onYTStateChange
           }
         });
-      } else {
-        currentType = 'html5';
-        html5Player.src = url;
-        html5Player.style.display = 'block';
+        return;
       }
+
+      // HLS (.m3u8) detection
+      if (url.toLowerCase().includes('.m3u8')) {
+        currentType = 'hls';
+        html5Player.style.display = 'block';
+        if (window.Hls && Hls.isSupported()) {
+          hls = new Hls({
+            // DVR-friendly defaults; tweak as you like:
+            backBufferLength: 600,          // keep up to 10 minutes behind
+            liveSyncDuration: 6,
+            liveMaxLatencyDuration: 300
+          });
+          hls.on(Hls.Events.ERROR, (evt, data) => {
+            console.warn('hls.js error', data);
+          });
+          hls.loadSource(url);
+          hls.attachMedia(html5Player);
+        } else if (html5Player.canPlayType('application/vnd.apple.mpegurl')) {
+          // Safari / iOS: native HLS
+          html5Player.src = url;
+        } else {
+          log("<b>Player:</b> This browser can't play HLS and hls.js is unavailable.");
+        }
+        return;
+      }
+
+      // Otherwise assume direct media (mp4/webm…)
+      currentType = 'html5';
+      html5Player.src = url;
+      html5Player.style.display = 'block';
     }
 
     function extractYouTubeID(url) {
@@ -253,6 +289,7 @@
       }
     }
 
+    // Sync events for HTML5/HLS
     html5Player.onplay = () => {
       if (isHost && conn) conn.send({ type: 'sync', action: 'play', time: html5Player.currentTime });
     };
@@ -264,13 +301,19 @@
     };
 
     function syncVideo(data) {
+      // YouTube sync
       if (currentType === 'yt' && ytPlayer) {
         ytPlayer.seekTo(data.time, true);
         if (data.action === 'play') ytPlayer.playVideo();
         else if (data.action === 'pause') ytPlayer.pauseVideo();
-      } else if (currentType === 'html5') {
-        if (Math.abs(html5Player.currentTime - data.time) > 0.5) html5Player.currentTime = data.time;
-        if (data.action === 'play') html5Player.play();
+        return;
+      }
+      // HTML5/HLS sync
+      if (currentType === 'html5' || currentType === 'hls') {
+        if (Math.abs(html5Player.currentTime - data.time) > 0.5) {
+          html5Player.currentTime = data.time;
+        }
+        if (data.action === 'play') html5Player.play().catch(()=>{});
         if (data.action === 'pause') html5Player.pause();
       }
     }
