@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Watch Together — Fullscreen 50/50 (Desktop & Mobile)</title>
+  <title>Watch Together — Fullscreen 50/50 (Desktop & Mobile) + Fit/Fill</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
     :root{
@@ -18,12 +18,12 @@
     body{
       margin:0; background:var(--bg); color:var(--text);
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-      line-height:1.4; overflow:hidden;
+      line-height:1.4; overflow:hidden; /* no page scroll */
       padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
     }
     .hidden{display:none !important}
 
-    /* --- Buttons/Inputs (compact) --- */
+    /* Buttons/Inputs (compact) */
     .btn{
       display:inline-flex; align-items:center; justify-content:center;
       padding:10px 12px; border-radius:10px; border:1px solid var(--border);
@@ -38,7 +38,7 @@
     }
     input::placeholder{color:var(--muted)}
 
-    /* --- Connect screen --- */
+    /* CONNECT */
     .connectScreen{
       height:100vh; width:100vw; display:flex; align-items:center; justify-content:center; padding:16px;
     }
@@ -52,37 +52,56 @@
     .row{display:flex; gap:8px; align-items:center}
     .row input{flex:1}
 
-    /* --- Session (fullscreen split) --- */
+    /* SESSION: fullscreen split */
     .session{
       height:100vh; width:100vw; display:grid; gap:0;
-      grid-template-columns: 1fr 1fr; grid-template-rows: 1fr;
+      grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; /* desktop: side-by-side */
     }
     @media (max-width: 680px){
-      .session{grid-template-columns:1fr; grid-template-rows: 1fr 1fr;}
+      .session{ grid-template-columns:1fr; grid-template-rows: 1fr 1fr; } /* mobile: top/bottom */
     }
     .left,.right{min-width:0; min-height:0}
+
+    /* VIDEO (fills its half completely) */
     .left{position:relative; background:#000}
     .videoWrap{position:absolute; inset:0; background:#000; overflow:hidden}
-    video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000}
+    video{position:absolute; inset:0; width:100%; height:100%; background:#000}
+    /* Fit/Fill modes toggled on .left */
+    .left.mode-fill video { object-fit:cover; }   /* no gaps, can crop */
+    .left.mode-fit  video { object-fit:contain; } /* no crop, may show bars */
+
+    /* Host vs guest interaction */
     .role-host video{pointer-events:auto}
     .role-guest video{pointer-events:none}
 
+    /* badges over video (top-left) + fit/fill toggle chip */
     .badges{
-      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2; user-select:none; pointer-events:none;
+      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
+      user-select:none; pointer-events:none;
     }
     .badge{
       background:rgba(0,0,0,.45); color:#eaf2f7; border:1px solid rgba(255,255,255,.12);
       padding:4px 8px; border-radius:999px; font-size:12px; backdrop-filter:saturate(120%) blur(6px);
     }
+    .chip{
+      pointer-events:auto; user-select:none; cursor:pointer;
+      padding:4px 8px; border-radius:999px; font-size:12px; font-weight:700;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(0,0,0,.55); color:#eaf2f7;
+    }
 
-    .right{display:flex; flex-direction:column; background:#14171b}
+    /* CHAT (fills its half; only vertical scroll; wrap long lines) */
+    .right{display:flex; flex-direction:column; background:var(--panel)}
     .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border)}
-    #messages{flex:1; min-height:0; overflow:auto; padding:12px; background:#0f1116}
+    #messages{
+      flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; background:#0f1116;
+      word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap; /* wrap long lines; no horizontal scroll */
+    }
     .msg{margin:0 0 10px}
     .me{color:#b4ffd9} .peer{color:#ffd6f6} .sys{color:var(--muted)}
-    .composer{display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:#14171b}
+    .composer{display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)}
     .composer input{flex:1}
-    .composer button{ /* compact send button */
+    .composer button{
       padding:10px 12px; border-radius:10px; border:1px solid transparent;
       background:var(--accent); color:#001218; font-weight:700;
     }
@@ -114,11 +133,12 @@
 <!-- SESSION -->
 <section id="sessionScreen" class="session hidden">
   <!-- LEFT: VIDEO -->
-  <div class="left">
+  <div class="left mode-fill" id="leftPane">
     <div class="videoWrap">
       <div class="badges">
         <span id="roleBadge" class="badge">Not connected</span>
         <span id="statusBadge" class="badge">Idle</span>
+        <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fill</button>
       </div>
       <video id="player" playsinline></video>
     </div>
@@ -145,10 +165,31 @@
   const statusBadge = $('statusBadge');
   const player = $('player');
   const messages = $('messages');
+  const leftPane = $('leftPane');
+  const fitToggle = $('fitToggle');
 
   let peer, conn, isHost = false;
   let hls = null;
   let videoLoaded = false;
+  let fitMode = null; // 'fit' | 'fill'
+
+  // ===== Fit/Fill Toggle =====
+  function setFitMode(mode){
+    fitMode = mode;
+    leftPane.classList.toggle('mode-fit',  mode==='fit');
+    leftPane.classList.toggle('mode-fill', mode==='fill');
+    fitToggle.textContent = mode === 'fit' ? 'Fit' : 'Fill';
+    fitToggle.title = mode === 'fit' ? 'No crop (bars may appear)' : 'Fill (may crop)';
+  }
+  // Default: desktop -> fill; mobile -> fit
+  function pickDefaultMode(){
+    const mobile = window.matchMedia('(max-width: 680px)').matches;
+    setFitMode(mobile ? 'fit' : 'fill');
+  }
+  fitToggle.addEventListener('click', ()=>{
+    setFitMode(fitMode === 'fit' ? 'fill' : 'fit');
+  });
+  window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
 
   // ===== UI helpers =====
   function showConnect(msg){ $('connectLog').textContent = msg || ''; }
@@ -159,6 +200,7 @@
     sessionScreen.classList.toggle('role-guest', role!=='host');
     roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
     if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
+    if (fitMode==null) pickDefaultMode();
   }
   function log(html, cls){
     const div = document.createElement('div');
@@ -293,8 +335,8 @@
     if (msg.action === 'pause') player.pause();
   }
 
-  // autofocus the Room ID on load
-  window.addEventListener('load', ()=> $('roomId')?.focus());
+  // Init default fit/fill on load
+  window.addEventListener('load', pickDefaultMode);
 </script>
 </body>
 </html>
