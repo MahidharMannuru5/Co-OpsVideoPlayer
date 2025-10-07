@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Watch Together (No Backend)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+    h2 { color: #00e1ff; }
+    input, button { padding: 8px; margin: 5px; border-radius: 5px; border: none; }
+    input { width: 220px; }
+    button { background: #00e1ff; color: #000; cursor: pointer; font-weight: bold; }
+    #player-container { margin-top: 20px; }
+    iframe, video { width: 80%; max-width: 720px; height: 405px; background: #000; border-radius: 10px; }
+    #chatBox { width: 80%; max-width: 720px; margin: 15px auto; text-align: left; background: #222; padding: 10px; border-radius: 10px; }
+    #messages { height: 200px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+    #msgInput { width: 80%; }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+  <h2>🎬 Watch Together</h2>
+
+  <div id="controls">
+    <button id="createRoom">Create Room</button>
+    <input id="roomIdInput" placeholder="Enter Room ID">
+    <button id="joinRoom">Join Room</button>
+  </div>
+
+  <p id="myIdDisplay"></p>
+
+  <div id="videoControls" style="display:none;">
+    <input id="videoUrl" placeholder="Paste video link...">
+    <button id="loadVideo">Load</button>
+  </div>
+
+  <div id="player-container">
+    <div id="ytPlayer"></div>
+    <video id="html5Player" controls style="display:none;"></video>
+  </div>
+
+  <div id="chatBox" style="display:none;">
+    <div id="messages"></div>
+    <input id="msgInput" placeholder="Type a message...">
+    <button id="sendBtn">Send</button>
+  </div>
+
+  <script>
+    let peer, conn;
+    let isHost = false;
+    let ytPlayer, html5Player = document.getElementById('html5Player');
+    let currentType = null; // "yt" or "html5"
+
+    function log(msg) {
+      console.log(msg);
+      let box = document.getElementById('messages');
+      box.innerHTML += `<div>${msg}</div>`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    document.getElementById('createRoom').onclick = () => {
+      isHost = true;
+      peer = new Peer();
+      peer.on('open', id => {
+        document.getElementById('myIdDisplay').innerText = `Room ID: ${id}`;
+        document.getElementById('videoControls').style.display = 'block';
+        document.getElementById('chatBox').style.display = 'block';
+      });
+      peer.on('connection', c => {
+        conn = c;
+        setupConnection();
+      });
+    };
+
+    document.getElementById('joinRoom').onclick = () => {
+      const id = document.getElementById('roomIdInput').value.trim();
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect(id);
+        setupConnection();
+        document.getElementById('chatBox').style.display = 'block';
+      });
+    };
+
+    function setupConnection() {
+      conn.on('open', () => log('✅ Connected!'));
+      conn.on('data', data => {
+        if (data.type === 'chat') {
+          log(`<b>Peer:</b> ${data.text}`);
+        } else if (data.type === 'video') {
+          loadVideo(data.url, false);
+        } else if (data.type === 'sync') {
+          syncVideo(data);
+        }
+      });
+    }
+
+    document.getElementById('sendBtn').onclick = () => {
+      const msg = document.getElementById('msgInput').value.trim();
+      if (!msg) return;
+      log(`<b>You:</b> ${msg}`);
+      conn?.send({ type: 'chat', text: msg });
+      document.getElementById('msgInput').value = '';
+    };
+
+    document.getElementById('loadVideo').onclick = () => {
+      const url = document.getElementById('videoUrl').value.trim();
+      loadVideo(url, true);
+      conn?.send({ type: 'video', url });
+    };
+
+    function loadVideo(url, isLocalHost) {
+      // detect type
+      document.getElementById('ytPlayer').innerHTML = "";
+      html5Player.style.display = 'none';
+      currentType = null;
+
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        currentType = 'yt';
+        const id = extractYouTubeID(url);
+        new YT.Player('ytPlayer', {
+          height: '405',
+          width: '720',
+          videoId: id,
+          events: { 
+            onReady: e => ytPlayer = e.target,
+            onStateChange: onYTStateChange
+          }
+        });
+      } else {
+        currentType = 'html5';
+        html5Player.src = url;
+        html5Player.style.display = 'block';
+      }
+    }
+
+    function extractYouTubeID(url) {
+      const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      return match ? match[1] : null;
+    }
+
+    // YouTube sync
+    function onYTStateChange(event) {
+      if (!isHost || !conn) return;
+      const state = event.data;
+      if (state === YT.PlayerState.PLAYING) {
+        conn.send({ type: 'sync', action: 'play', time: ytPlayer.getCurrentTime() });
+      } else if (state === YT.PlayerState.PAUSED) {
+        conn.send({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
+      }
+    }
+
+    // HTML5 sync
+    html5Player.onplay = () => {
+      if (isHost && conn) conn.send({ type: 'sync', action: 'play', time: html5Player.currentTime });
+    };
+    html5Player.onpause = () => {
+      if (isHost && conn) conn.send({ type: 'sync', action: 'pause', time: html5Player.currentTime });
+    };
+    html5Player.onseeked = () => {
+      if (isHost && conn) conn.send({ type: 'sync', action: 'seek', time: html5Player.currentTime });
+    };
+
+    function syncVideo(data) {
+      if (currentType === 'yt' && ytPlayer) {
+        if (data.action === 'play') {
+          ytPlayer.seekTo(data.time, true);
+          ytPlayer.playVideo();
+        } else if (data.action === 'pause') {
+          ytPlayer.pauseVideo();
+        }
+      } else if (currentType === 'html5') {
+        if (Math.abs(html5Player.currentTime - data.time) > 0.5) html5Player.currentTime = data.time;
+        if (data.action === 'play') html5Player.play();
+        if (data.action === 'pause') html5Player.pause();
+      }
+    }
+  </script>
+</body>
+</html>
