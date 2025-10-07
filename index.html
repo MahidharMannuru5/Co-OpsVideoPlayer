@@ -15,6 +15,8 @@
     #chatBox { width: 80%; max-width: 720px; margin: 15px auto; text-align: left; background: #222; padding: 10px; border-radius: 10px; }
     #messages { height: 200px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     #msgInput { width: 80%; }
+    #myIdDisplay { font-size: 14px; opacity: 0.9; margin-top: 8px; letter-spacing: 2px; }
+    #roomIdInput { text-transform: uppercase; letter-spacing: 2px; width: 140px; text-align: center; }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
@@ -25,7 +27,7 @@
 
   <div id="controls">
     <button id="createRoom">Create Room</button>
-    <input id="roomIdInput" placeholder="Enter Room ID">
+    <input id="roomIdInput" placeholder="ABCD" maxlength="4" pattern="[A-Za-z]{4}" title="4 letters A–Z">
     <button id="joinRoom">Join Room</button>
   </div>
 
@@ -55,32 +57,99 @@
 
     function log(msg) {
       console.log(msg);
-      let box = document.getElementById('messages');
+      const box = document.getElementById('messages');
+      if (!box) return;
       box.innerHTML += `<div>${msg}</div>`;
       box.scrollTop = box.scrollHeight;
     }
 
-    document.getElementById('createRoom').onclick = () => {
+    // ---- ID helpers (4-letter codes A–Z only) ----
+    const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    function makeFourLetterId() {
+      let out = "";
+      for (let i = 0; i < 4; i++) out += LETTERS[Math.floor(Math.random() * LETTERS.length)];
+      return out;
+    }
+    function sanitizeToFourLetters(s) {
+      return (s || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+    }
+
+    // keep input uppercase and letters only
+    const roomInput = document.getElementById('roomIdInput');
+    roomInput.addEventListener('input', () => {
+      const cur = roomInput.value;
+      const cleaned = sanitizeToFourLetters(cur);
+      if (cur !== cleaned) roomInput.value = cleaned;
+    });
+
+    // ---- Create Room (4-letter host ID) ----
+    document.getElementById('createRoom').onclick = async () => {
       isHost = true;
-      peer = new Peer();
-      peer.on('open', id => {
-        document.getElementById('myIdDisplay').innerText = `Room ID: ${id}`;
-        document.getElementById('videoControls').style.display = 'block';
-        document.getElementById('chatBox').style.display = 'block';
-      });
-      peer.on('connection', c => {
-        conn = c;
-        setupConnection();
-      });
+      await createPeerWithFourLetterId();
     };
 
+    async function createPeerWithFourLetterId(maxTries = 8) {
+      // Try several times in case the code is already taken
+      for (let attempt = 1; attempt <= maxTries; attempt++) {
+        const id = makeFourLetterId();
+        try {
+          await new Promise((resolve, reject) => {
+            peer = new Peer(id);
+            const cleanup = () => {
+              peer?.off?.('open', onOpen);
+              peer?.off?.('error', onErr);
+            };
+            const onOpen = () => { cleanup(); resolve(); };
+            const onErr = (err) => {
+              cleanup();
+              // If ID is taken, reject to trigger a retry; otherwise surface the error
+              if (err?.type === 'unavailable-id') reject(err);
+              else reject(Object.assign(new Error('peer-error'), { cause: err }));
+            };
+            peer.on('open', onOpen);
+            peer.on('error', onErr);
+          });
+
+          // Success
+          document.getElementById('myIdDisplay').innerText = `Room ID: ${peer.id}`;
+          document.getElementById('videoControls').style.display = 'block';
+          document.getElementById('chatBox').style.display = 'block';
+          peer.on('connection', c => { conn = c; setupConnection(); });
+          log('✅ Room created. Share your 4-letter ID.');
+          return;
+        } catch (e) {
+          // If not the last try, destroy and retry with a new ID
+          try { peer?.destroy?.(); } catch {}
+          if (e?.type === 'unavailable-id' && attempt < maxTries) {
+            await new Promise(r => setTimeout(r, 150 + Math.random()*250));
+            continue;
+          } else if (e?.message === 'peer-error') {
+            log('❌ Peer error: ' + (e.cause?.message || e));
+            break;
+          } else if (attempt >= maxTries) {
+            log('❌ Could not allocate a 4-letter ID after multiple tries. Please try again.');
+          }
+        }
+      }
+    }
+
+    // ---- Join Room ----
     document.getElementById('joinRoom').onclick = () => {
-      const id = document.getElementById('roomIdInput').value.trim();
-      peer = new Peer();
+      const raw = document.getElementById('roomIdInput').value;
+      const id = sanitizeToFourLetters(raw);
+      if (id.length !== 4) {
+        alert('Please enter a 4-letter Room ID (A–Z).');
+        return;
+      }
+      peer = new Peer(); // random caller ID is fine
       peer.on('open', () => {
         conn = peer.connect(id);
         setupConnection();
         document.getElementById('chatBox').style.display = 'block';
+        log(`🔗 Connecting to ${id}...`);
+      });
+      peer.on('error', (err) => {
+        log('❌ Peer error: ' + (err?.message || err));
       });
     };
 
@@ -95,6 +164,8 @@
           syncVideo(data);
         }
       });
+      conn.on('close', () => log('🔌 Disconnected.'));
+      conn.on('error', (e) => log('⚠️ Connection error: ' + (e?.message || e)));
     }
 
     document.getElementById('sendBtn').onclick = () => {
@@ -107,8 +178,9 @@
 
     document.getElementById('loadVideo').onclick = () => {
       const url = document.getElementById('videoUrl').value.trim();
+      if (!url) return;
       loadVideo(url, true);
-      conn?.send({ type: 'video', url });
+      conn?.send?.({ type: 'video', url });
     };
 
     function loadVideo(url, isLocalHost) {
