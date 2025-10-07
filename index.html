@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Watch Together (Synced)</title>
+  <title>Watch Together (No Backend)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
@@ -12,11 +12,9 @@
     button { background: #00e1ff; color: #000; cursor: pointer; font-weight: bold; }
     #player-container { margin-top: 20px; }
     iframe, video { width: 80%; max-width: 720px; height: 405px; background: #000; border-radius: 10px; }
-    #chatBox { width: 80%; max-width: 720px; margin: 15px auto; text-align: left; background: #222; padding: 10px; border-radius: 10px; display:none; }
+    #chatBox { width: 80%; max-width: 720px; margin: 15px auto; text-align: left; background: #222; padding: 10px; border-radius: 10px; }
     #messages { height: 200px; overflow-y: auto; background: #111; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     #msgInput { width: 80%; }
-    #myIdDisplay { font-size: 14px; opacity: 0.9; margin-top: 8px; letter-spacing: 2px; }
-    #roomIdInput { text-transform: uppercase; letter-spacing: 2px; width: 140px; text-align: center; }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
@@ -27,7 +25,7 @@
 
   <div id="controls">
     <button id="createRoom">Create Room</button>
-    <input id="roomIdInput" placeholder="ABCD" maxlength="4" pattern="[A-Za-z]{4}" title="4 letters A–Z">
+    <input id="roomIdInput" placeholder="Enter Room ID">
     <button id="joinRoom">Join Room</button>
   </div>
 
@@ -43,7 +41,7 @@
     <video id="html5Player" controls style="display:none;"></video>
   </div>
 
-  <div id="chatBox">
+  <div id="chatBox" style="display:none;">
     <div id="messages"></div>
     <input id="msgInput" placeholder="Type a message...">
     <button id="sendBtn">Send</button>
@@ -51,131 +49,43 @@
 
   <script>
     let peer, conn;
-    let connOpen = false;
-    const outbox = [];
     let isHost = false;
     let ytPlayer, html5Player = document.getElementById('html5Player');
     let currentType = null; // "yt" or "html5"
 
     function log(msg) {
       console.log(msg);
-      const box = document.getElementById('messages');
-      if (!box) return;
+      let box = document.getElementById('messages');
       box.innerHTML += `<div>${msg}</div>`;
       box.scrollTop = box.scrollHeight;
     }
 
-    // ---- Safe send queue ----
-    function sendSafe(payload) {
-      if (conn && conn.open) {
-        try { conn.send(payload); } catch (e) { console.warn('send failed', e); }
-      } else {
-        outbox.push(payload);
-      }
-    }
-    function flushOutbox() {
-      while (conn && conn.open && outbox.length) {
-        try { conn.send(outbox.shift()); } catch (e) { break; }
-      }
-    }
-
-    // ---- ID helpers (4-letter codes A–Z only) ----
-    const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    function makeFourLetterId() {
-      let out = "";
-      for (let i = 0; i < 4; i++) out += LETTERS[Math.floor(Math.random() * LETTERS.length)];
-      return out;
-    }
-    function sanitizeToFourLetters(s) {
-      return (s || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
-    }
-
-    // keep input uppercase and letters only
-    const roomInput = document.getElementById('roomIdInput');
-    roomInput.addEventListener('input', () => {
-      const cur = roomInput.value;
-      const cleaned = sanitizeToFourLetters(cur);
-      if (cur !== cleaned) roomInput.value = cleaned;
-    });
-
-    // ---- Create Room (4-letter host ID) ----
-    document.getElementById('createRoom').onclick = async () => {
+    document.getElementById('createRoom').onclick = () => {
       isHost = true;
-      await createPeerWithFourLetterId();
-    };
-
-    async function createPeerWithFourLetterId(maxTries = 8) {
-      for (let attempt = 1; attempt <= maxTries; attempt++) {
-        const id = makeFourLetterId();
-        try {
-          await new Promise((resolve, reject) => {
-            peer = new Peer(id);
-            const cleanup = () => {
-              peer?.off?.('open', onOpen);
-              peer?.off?.('error', onErr);
-            };
-            const onOpen = () => { cleanup(); resolve(); };
-            const onErr = (err) => {
-              cleanup();
-              if (err?.type === 'unavailable-id') reject(err);
-              else reject(Object.assign(new Error('peer-error'), { cause: err }));
-            };
-            peer.on('open', onOpen);
-            peer.on('error', onErr);
-          });
-
-          // Success
-          document.getElementById('myIdDisplay').innerText = `Room ID: ${peer.id}`;
-          document.getElementById('videoControls').style.display = 'block';
-          peer.on('connection', c => { setupConnection(c); });
-          log('✅ Room created. Share your 4-letter ID.');
-          return;
-        } catch (e) {
-          try { peer?.destroy?.(); } catch {}
-          if (e?.type === 'unavailable-id' && attempt < maxTries) {
-            await new Promise(r => setTimeout(r, 150 + Math.random()*250));
-            continue;
-          } else if (e?.message === 'peer-error') {
-            log('❌ Peer error: ' + (e.cause?.message || e));
-            break;
-          } else if (attempt >= maxTries) {
-            log('❌ Could not allocate a 4-letter ID after multiple tries. Please try again.');
-          }
-        }
-      }
-    }
-
-    // ---- Join Room ----
-    document.getElementById('joinRoom').onclick = () => {
-      const raw = document.getElementById('roomIdInput').value;
-      const id = sanitizeToFourLetters(raw);
-      if (id.length !== 4) {
-        alert('Please enter a 4-letter Room ID (A–Z).');
-        return;
-      }
-      peer = new Peer(); // random caller ID
-      peer.on('open', () => {
-        const c = peer.connect(id);
-        setupConnection(c);
-        log(`🔗 Connecting to ${id}...`);
-      });
-      peer.on('error', (err) => {
-        log('❌ Peer error: ' + (err?.message || err));
-      });
-    };
-
-    // ---- Data connection wiring ----
-    function setupConnection(c) {
-      conn = c || conn;
-      if (!conn) return;
-
-      conn.on('open', () => {
-        connOpen = true;
+      peer = new Peer();
+      peer.on('open', id => {
+        document.getElementById('myIdDisplay').innerText = `Room ID: ${id}`;
+        document.getElementById('videoControls').style.display = 'block';
         document.getElementById('chatBox').style.display = 'block';
-        log('✅ Connected!');
-        flushOutbox();
       });
+      peer.on('connection', c => {
+        conn = c;
+        setupConnection();
+      });
+    };
 
+    document.getElementById('joinRoom').onclick = () => {
+      const id = document.getElementById('roomIdInput').value.trim();
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect(id);
+        setupConnection();
+        document.getElementById('chatBox').style.display = 'block';
+      });
+    };
+
+    function setupConnection() {
+      conn.on('open', () => log('✅ Connected!'));
       conn.on('data', data => {
         if (data.type === 'chat') {
           log(`<b>Peer:</b> ${data.text}`);
@@ -185,29 +95,24 @@
           syncVideo(data);
         }
       });
-
-      conn.on('close', () => { connOpen = false; log('🔌 Disconnected.'); });
-      conn.on('error', (e) => log('⚠️ Connection error: ' + (e?.message || e)));
     }
 
-    // ---- Chat ----
     document.getElementById('sendBtn').onclick = () => {
       const msg = document.getElementById('msgInput').value.trim();
       if (!msg) return;
       log(`<b>You:</b> ${msg}`);
-      sendSafe({ type: 'chat', text: msg });
+      conn?.send({ type: 'chat', text: msg });
       document.getElementById('msgInput').value = '';
     };
 
-    // ---- Video loading ----
     document.getElementById('loadVideo').onclick = () => {
       const url = document.getElementById('videoUrl').value.trim();
-      if (!url) return;
       loadVideo(url, true);
-      sendSafe({ type: 'video', url });
+      conn?.send({ type: 'video', url });
     };
 
     function loadVideo(url, isLocalHost) {
+      // detect type
       document.getElementById('ytPlayer').innerHTML = "";
       html5Player.style.display = 'none';
       currentType = null;
@@ -236,38 +141,28 @@
       return match ? match[1] : null;
     }
 
-    // ---- YouTube event sync ----
+    // YouTube sync
     function onYTStateChange(event) {
-      if (!isHost) return;
+      if (!isHost || !conn) return;
       const state = event.data;
       if (state === YT.PlayerState.PLAYING) {
-        sendSafe({ type: 'sync', action: 'play', time: ytPlayer.getCurrentTime() });
+        conn.send({ type: 'sync', action: 'play', time: ytPlayer.getCurrentTime() });
       } else if (state === YT.PlayerState.PAUSED) {
-        sendSafe({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
+        conn.send({ type: 'sync', action: 'pause', time: ytPlayer.getCurrentTime() });
       }
     }
 
-    // ---- HTML5 sync events ----
+    // HTML5 sync
     html5Player.onplay = () => {
-      if (isHost) sendSafe({ type: 'sync', action: 'play', time: html5Player.currentTime });
+      if (isHost && conn) conn.send({ type: 'sync', action: 'play', time: html5Player.currentTime });
     };
     html5Player.onpause = () => {
-      if (isHost) sendSafe({ type: 'sync', action: 'pause', time: html5Player.currentTime });
+      if (isHost && conn) conn.send({ type: 'sync', action: 'pause', time: html5Player.currentTime });
     };
     html5Player.onseeked = () => {
-      if (isHost) sendSafe({ type: 'sync', action: 'seek', time: html5Player.currentTime });
+      if (isHost && conn) conn.send({ type: 'sync', action: 'seek', time: html5Player.currentTime });
     };
 
-    // ---- Continuous sync from host every 2 seconds ----
-    setInterval(() => {
-      if (!isHost) return;
-      let currentTime = 0;
-      if (currentType === 'yt' && ytPlayer) currentTime = ytPlayer.getCurrentTime();
-      if (currentType === 'html5' && html5Player) currentTime = html5Player.currentTime;
-      sendSafe({ type: 'sync', action: 'update', time: currentTime });
-    }, 2000);
-
-    // ---- Apply sync from peer ----
     function syncVideo(data) {
       if (currentType === 'yt' && ytPlayer) {
         if (data.action === 'play') {
@@ -275,22 +170,14 @@
           ytPlayer.playVideo();
         } else if (data.action === 'pause') {
           ytPlayer.pauseVideo();
-        } else if (data.action === 'update') {
-          const diff = Math.abs(ytPlayer.getCurrentTime() - data.time);
-          if (diff > 0.5) ytPlayer.seekTo(data.time, true);
         }
       } else if (currentType === 'html5') {
-        if (data.action === 'play') {
-          html5Player.currentTime = data.time;
-          html5Player.play();
-        } else if (data.action === 'pause') {
-          html5Player.pause();
-        } else if (data.action === 'update') {
-          const diff = Math.abs(html5Player.currentTime - data.time);
-          if (diff > 0.5) html5Player.currentTime = data.time;
-        }
+        if (Math.abs(html5Player.currentTime - data.time) > 0.5) html5Player.currentTime = data.time;
+        if (data.action === 'play') html5Player.play();
+        if (data.action === 'pause') html5Player.pause();
       }
     }
   </script>
 </body>
 </html>
+
