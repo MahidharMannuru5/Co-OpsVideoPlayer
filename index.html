@@ -1,433 +1,493 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Watch Together — 50/50 + Fit/Fill + L/R Chat Bubbles</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <style>
-    :root{
-      --bg:#0c0d0f; --panel:#14171b; --border:#232834;
-      --text:#e8eef3; --muted:#97a3ae; --accent:#00e1ff;
-      --me:#00d4b3; --peer:#ff72d2;
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
+    <meta charset="UTF-8" />
+    <title>Watch Together — 50/50 + Fit/Fill + L/R Chat Bubbles</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <style>
+        :root{
+            --bg:#0c0d0f; --panel:#14171b; --border:#232834;
+            --text:#e8eef3; --muted:#97a3ae; --accent:#00e1ff;
+            --me:#00d4b3; --peer:#ff72d2;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-left: env(safe-area-inset-left, 0px);
 
-      /* ADDED: virtual keyboard support */
-      --kbd: 0px;            /* current virtual keyboard height */
-      --composer-h: 56px;    /* updated by JS after mount */
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; background:var(--bg); color:var(--text);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-      line-height:1.4; overflow:hidden; /* no page scroll */
-      padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
-      /* ADDED: avoid browser overscroll shifting the layout */
-      overscroll-behavior:contain;
-    }
-    .hidden{display:none !important}
+            /* ADDED: virtual keyboard support */
+            --kbd: 0px;            /* current virtual keyboard height */
+            --composer-h: 56px;    /* updated by JS after mount */
+        }
+        *{box-sizing:border-box}
+        html,body{height:100%}
+        body{
+            margin:0; background:var(--bg); color:var(--text);
+            font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            line-height:1.4; overflow:hidden; /* no page scroll */
+            padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+            /* ADDED: avoid browser overscroll shifting the layout */
+            overscroll-behavior:contain;
+        }
+        .hidden{display:none !important}
 
-    /* Buttons/Inputs (compact) */
-    .btn{
-      display:inline-flex; align-items:center; justify-content:center;
-      padding:10px 12px; border-radius:10px; border:1px solid var(--border);
-      background:#0f1116; color:var(--text); font-weight:600; font-size:14px;
-      cursor:pointer; line-height:1; white-space:nowrap;
-    }
-    .btn-primary{background:var(--accent); color:#001218; border-color:transparent}
-    .btn-sm{padding:10px 12px; min-width:96px}
-    input[type=text]{
-      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
-      background:#0f1116; color:#e8eef3; font-size:14px; line-height:1;
-    }
-    input::placeholder{color:var(--muted)}
+        /* Buttons/Inputs (compact) */
+        .btn{
+            display:inline-flex; align-items:center; justify-content:center;
+            padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+            background:#0f1116; color:var(--text); font-weight:600; font-size:14px;
+            cursor:pointer; line-height:1; white-space:nowrap;
+        }
+        .btn-primary{background:var(--accent); color:#001218; border-color:transparent}
+        .btn-sm{padding:10px 12px; min-width:96px}
+        input[type=text]{
+            width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+            background:#0f1116; color:#e8eef3; font-size:14px; line-height:1;
+        }
+        input::placeholder{color:var(--muted)}
 
-    /* CONNECT (use 100dvh so mobile shows full UI) */
-    .connectScreen{
-      height:100dvh; width:100vw; display:flex; align-items:center; justify-content:center; padding:16px;
-    }
-    .connect{
-      width:min(480px, 92vw);
-      background:var(--panel); border:1px solid var(--border); border-radius:14px;
-      padding:16px; display:flex; flex-direction:column; gap:10px;
-    }
-    .title{font-weight:800; color:var(--accent); text-align:center}
-    .sub{color:var(--muted); font-size:13px; text-align:center}
-    .row{display:flex; gap:8px; align-items:center}
-    .row input{flex:1}
+        /* CONNECT (use 100dvh so mobile shows full UI) */
+        .connectScreen{
+            height:100dvh; width:100vw; display:flex; align-items:center; justify-content:center; padding:16px;
+        }
+        .connect{
+            width:min(480px, 92vw);
+            background:var(--panel); border:1px solid var(--border); border-radius:14px;
+            padding:16px; display:flex; flex-direction:column; gap:10px;
+        }
+        .title{font-weight:800; color:var(--accent); text-align:center}
+        .sub{color:var(--muted); font-size:13px; text-align:center}
+        .row{display:flex; gap:8px; align-items:center}
+        .row input{flex:1}
 
-    /* SESSION: fullscreen split (100dvh for mobile browser chrome) */
-    .session{
-      height:100dvh; width:100vw; display:grid; gap:0;
-      grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; /* desktop: side-by-side */
+        /* SESSION: fullscreen split (100dvh for mobile browser chrome) */
+        .session{
+            height:100dvh; width:100vw; display:grid; gap:0;
+            grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; /* desktop: side-by-side */
 
-      /* ADDED: keep layout fixed so video doesn't shift when keyboard opens */
-      position:fixed; inset:0;
-    }
-    @media (max-width: 680px){
-      .session{ grid-template-columns:1fr; grid-template-rows: 1fr 1fr; } /* mobile: top/bottom */
-    }
-    .left,.right{min-width:0; min-height:0}
+            /* ADDED: keep layout fixed so video doesn't shift when keyboard opens */
+            position:fixed; inset:0;
+        }
+        @media (max-width: 680px){
+            .session{ grid-template-columns:1fr; grid-template-rows: 1fr 1fr; } /* mobile: top/bottom */
+        }
+        .left,.right{min-width:0; min-height:0}
 
-    /* VIDEO (fills its half completely) */
-    .left{position:relative; background:#000}
-    .videoWrap{position:absolute; inset:0; background:#000; overflow:hidden}
-    video{position:absolute; inset:0; width:100%; height:100%; background:#000}
-    /* Fit/Fill modes toggled on .left */
-    .left.mode-fill video { object-fit:cover; }   /* no gaps, can crop */
-    .left.mode-fit  video { object-fit:contain; } /* no crop, may show bars */
+        /* VIDEO (fills its half completely) */
+        .left{position:relative; background:#000}
+        .videoWrap{position:absolute; inset:0; background:#000; overflow:hidden}
+        video{position:absolute; inset:0; width:100%; height:100%; background:#000}
+        /* Fit/Fill modes toggled on .left */
+        .left.mode-fill video { object-fit:cover; }   /* no gaps, can crop */
+        .left.mode-fit  video { object-fit:contain; } /* no crop, may show bars */
 
-    /* Host vs guest interaction */
-    .role-host video{pointer-events:auto}
-    .role-guest video{pointer-events:none}
+        /* Host vs guest interaction */
+        .role-host video{pointer-events:auto}
+        .role-guest video{pointer-events:none}
 
-    /* badges + fit/fill toggle */
-    .badges{
-      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
-      user-select:none; pointer-events:none;
-    }
-    .badge{
-      background:rgba(0,0,0,.45); color:#eaf2f7; border:1px solid rgba(255,255,255,.12);
-      padding:4px 8px; border-radius:999px; font-size:12px; backdrop-filter:saturate(120%) blur(6px);
-    }
-    .chip{
-      pointer-events:auto; user-select:none; cursor:pointer;
-      padding:4px 8px; border-radius:999px; font-size:12px; font-weight:700;
-      border:1px solid rgba(255,255,255,.18);
-      background:rgba(0,0,0,.55); color:#eaf2f7;
-    }
+        /* badges + fit/fill toggle */
+        .badges{
+            position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
+            user-select:none; pointer-events:none;
+        }
+        .badge{
+            background:rgba(0,0,0,.45); color:#eaf2f7; border:1px solid rgba(255,255,255,.12);
+            padding:4px 8px; border-radius:999px; font-size:12px; backdrop-filter:saturate(120%) blur(6px);
+        }
+        .chip{
+            pointer-events:auto; user-select:none; cursor:pointer;
+            padding:4px 8px; border-radius:999px; font-size:12px; font-weight:700;
+            border:1px solid rgba(255,255,255,.18);
+            background:rgba(0,0,0,.55); color:#eaf2f7;
+        }
 
-    /* CHAT (right): vertical scroll only + left/right bubbles */
-    .right{display:flex; flex-direction:column; background:var(--panel)}
-    .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border)}
+        /* CHAT (right): vertical scroll only + left/right bubbles */
+        .right{display:flex; flex-direction:column; background:var(--panel)}
+        .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border)}
 
-    #messages{
-      flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; background:#0f1116;
-      display:flex; flex-direction:column; gap:8px;
-      word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap; /* wrap long lines; no horizontal scroll */
-    }
-    .line{display:flex; width:100%}
-    .from-me{justify-content:flex-end}
-    .from-peer{justify-content:flex-start}
-    .from-sys{justify-content:center}
+        #messages{
+            flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; background:#0f1116;
+            display:flex; flex-direction:column; gap:8px;
+            word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap; /* wrap long lines; no horizontal scroll */
+        }
+        .line{display:flex; width:100%}
+        .from-me{justify-content:flex-end}
+        .from-peer{justify-content:flex-start}
+        .from-sys{justify-content:center}
 
-    .bubble{
-      max-width:88%;
-      padding:10px 12px;
-      border-radius:14px;
-      border:1px solid transparent;
-      box-shadow:0 1px 2px rgba(0,0,0,.25);
-      font-size:14px;
-    }
-    .bubble.me{
-      background:rgba(0,212,179,.15); border-color:rgba(0,212,179,.35); color:#d9fff7;
-      border-top-right-radius:6px;
-    }
-    .bubble.peer{
-      background:rgba(255,114,210,.14); border-color:rgba(255,114,210,.35); color:#ffe6f6;
-      border-top-left-radius:6px;
-    }
-    .bubble.sys{
-      background:transparent; border-color:transparent; color:var(--muted);
-      font-size:12px; padding:6px 8px; box-shadow:none;
-    }
+        .bubble{
+            max-width:88%;
+            padding:10px 12px;
+            border-radius:14px;
+            border:1px solid transparent;
+            box-shadow:0 1px 2px rgba(0,0,0,.25);
+            font-size:14px;
+        }
+        .bubble.me{
+            background:rgba(0,212,179,.15); border-color:rgba(0,212,179,.35); color:#d9fff7;
+            border-top-right-radius:6px;
+        }
+        .bubble.peer{
+            background:rgba(255,114,210,.14); border-color:rgba(255,114,210,.35); color:#ffe6f6;
+            border-top-left-radius:6px;
+        }
+        .bubble.sys{
+            background:transparent; border-color:transparent; color:var(--muted);
+            font-size:12px; padding:6px 8px; box-shadow:none;
+        }
 
-    .composer{
-      display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)
-    }
-    .composer input{flex:1}
-    .composer button{
-      padding:10px 12px; border-radius:10px; border:1px solid transparent;
-      background:var(--accent); color:#001218; font-weight:700;
-    }
+        .composer{
+            display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)
+        }
+        .composer input{flex:1}
+        .composer button{
+            padding:10px 12px; border-radius:10px; border:1px solid transparent;
+            background:var(--accent); color:#001218; font-weight:700;
+        }
 
-    /* ====== ADDED (keyboard-aware chat without moving the video) ====== */
-    /* Keep chat in a positioned context */
-    .right .chat{ position:relative; }
+        /* ====== ADDED (keyboard-aware chat without moving the video) ====== */
+        /* Keep chat in a positioned context */
+        .right .chat{ position:relative; }
 
-    /* Make messages occupy space above the composer + keyboard */
-    #messages{
-      position:absolute; top:0; left:0; right:0;
-      bottom: calc(var(--composer-h) + var(--kbd));
-    }
+        /* Make messages occupy space above the composer + keyboard */
+        #messages{
+            position:absolute; top:0; left:0; right:0;
+            bottom: calc(var(--composer-h) + var(--kbd));
+        }
 
-    /* Lift composer exactly to the keyboard top (0 on desktop) */
-    .composer{
-      position:absolute; left:0; right:0; bottom: var(--kbd);
-    }
+        /* Lift composer exactly to the keyboard top (0 on desktop) */
+        .composer{
+            position:absolute; left:0; right:0; bottom: var(--kbd);
+        }
 
-    /* Optional: avoid smooth scroll jumps when keyboard toggles */
-    .kbd-open #messages{ scroll-behavior:auto; }
-    /* ====== /ADDED ====== */
-  </style>
+        /* Optional: avoid smooth scroll jumps when keyboard toggles */
+        .kbd-open #messages{ scroll-behavior:auto; }
+        /* ====== /ADDED ====== */
+    </style>
 
-  <!-- PeerJS & hls.js -->
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
 
-<!-- CONNECT -->
 <section id="connectScreen" class="connectScreen">
-  <div class="connect">
-    <div class="title">🎬 Watch Together</div>
-    <div class="sub">Desktop: Left video / Right chat (50/50). Mobile: Top/Bottom (50/50).</div>
+    <div class="connect">
+        <div class="title">🎬 Watch Together</div>
+        <div class="sub">Desktop: Left video / Right chat (50/50). Mobile: Top/Bottom (50/50).</div>
 
-    <button id="createBtn" class="btn btn-primary">Create Room (Host)</button>
+        <button id="createBtn" class="btn btn-primary">Create Room (Host)</button>
 
-    <div class="row">
-      <input id="roomId" type="text" placeholder="Room ID" autofocus />
-      <button id="joinBtn" class="btn btn-primary btn-sm">Join</button>
+        <div class="row">
+            <input id="roomId" type="text" placeholder="Room ID" autofocus />
+            <button id="joinBtn" class="btn btn-primary btn-sm">Join</button>
+        </div>
+
+        <div id="connectLog" class="sub"></div>
     </div>
-
-    <div id="connectLog" class="sub"></div>
-  </div>
 </section>
 
-<!-- SESSION -->
 <section id="sessionScreen" class="session hidden">
-  <!-- LEFT: VIDEO -->
-  <div class="left mode-fill" id="leftPane">
-    <div class="videoWrap">
-      <div class="badges">
-        <span id="roleBadge" class="badge">Not connected</span>
-        <span id="statusBadge" class="badge">Idle</span>
-        <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fill</button>
-      </div>
-      <video id="player" playsinline></video>
+    <div class="left mode-fill" id="leftPane">
+        <div class="videoWrap">
+            <div class="badges">
+                <span id="roleBadge" class="badge">Not connected</span>
+                <span id="statusBadge" class="badge">Idle</span>
+                <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fill</button>
+            </div>
+            <video id="player" playsinline></video>
+        </div>
     </div>
-  </div>
 
-  <!-- RIGHT: CHAT -->
-  <div class="right">
-    <div class="chat">
-      <div id="messages"></div>
-      <div class="composer">
-        <input id="msgInput" type="text" placeholder="Message…  (host: /load &lt;url&gt;)" />
-        <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
-      </div>
+    <div class="right">
+        <div class="chat">
+            <div id="messages"></div>
+            <div class="composer">
+                <input id="msgInput" type="text" placeholder="Message…  (host: /load &lt;url&gt; or /vib &lt;sec&gt;)" />
+                <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
+            </div>
+        </div>
     </div>
-  </div>
 </section>
 
 <script>
-  // ===== Shortcuts =====
-  const $ = id => document.getElementById(id);
-  const connectScreen = $('connectScreen');
-  const sessionScreen = $('sessionScreen');
-  const roleBadge = $('roleBadge');
-  const statusBadge = $('statusBadge');
-  const player = $('player');
-  const messages = $('messages');
-  const leftPane = $('leftPane');
-  const fitToggle = $('fitToggle');
+    // ===== Shortcuts =====
+    const $ = id => document.getElementById(id);
+    const connectScreen = $('connectScreen');
+    const sessionScreen = $('sessionScreen');
+    const roleBadge = $('roleBadge');
+    const statusBadge = $('statusBadge');
+    const player = $('player');
+    const messages = $('messages');
+    const leftPane = $('leftPane');
+    const fitToggle = $('fitToggle');
 
-  let peer, conn, isHost = false;
-  let hls = null;
-  let videoLoaded = false;
-  let fitMode = null; // 'fit' | 'fill'
+    let peer, conn, isHost = false;
+    let hls = null;
+    let videoLoaded = false;
+    let fitMode = null; // 'fit' | 'fill'
 
-  // ===== Fit/Fill Toggle =====
-  function setFitMode(mode){
-    fitMode = mode;
-    leftPane.classList.toggle('mode-fit',  mode==='fit');
-    leftPane.classList.toggle('mode-fill', mode==='fill');
-    fitToggle.textContent = mode === 'fit' ? 'Fit' : 'Fill';
-    fitToggle.title = mode === 'fit' ? 'No crop (bars may appear)' : 'Fill (may crop)';
-  }
-  function pickDefaultMode(){
-    const mobile = window.matchMedia('(max-width: 680px)').matches;
-    setFitMode(mobile ? 'fit' : 'fill');
-  }
-  fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
-  window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
+    // ===== Fit/Fill Toggle (Existing Functionality) =====
+    function setFitMode(mode){
+        fitMode = mode;
+        leftPane.classList.toggle('mode-fit',  mode==='fit');
+        leftPane.classList.toggle('mode-fill', mode==='fill');
+        fitToggle.textContent = mode === 'fit' ? 'Fit' : 'Fill';
+        fitToggle.title = mode === 'fit' ? 'No crop (bars may appear)' : 'Fill (may crop)';
+    }
+    function pickDefaultMode(){
+        const mobile = window.matchMedia('(max-width: 680px)').matches;
+        setFitMode(mobile ? 'fit' : 'fill');
+    }
+    fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
+    window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
 
-  // ===== UI helpers =====
-  function showConnect(msg){ $('connectLog').textContent = msg || ''; }
-  function toSession(role){
-    connectScreen.classList.add('hidden');
-    sessionScreen.classList.remove('hidden');
-    sessionScreen.classList.toggle('role-host', role==='host');
-    sessionScreen.classList.toggle('role-guest', role!=='host');
-    roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
-    if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
-    if (fitMode==null) pickDefaultMode();
-  }
+    // ===== UI helpers (Existing Functionality) =====
+    function showConnect(msg){ $('connectLog').textContent = msg || ''; }
+    function toSession(role){
+        connectScreen.classList.add('hidden');
+        sessionScreen.classList.remove('hidden');
+        sessionScreen.classList.toggle('role-host', role==='host');
+        sessionScreen.classList.toggle('role-guest', role!=='host');
+        roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
+        if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
+        if (fitMode==null) pickDefaultMode();
+    }
 
-  // chat bubble helpers
-  function addBubble(text, who){
-    const line = document.createElement('div');
-    line.className = 'line ' + (who==='me' ? 'from-me' : who==='peer' ? 'from-peer' : 'from-sys');
-    const b = document.createElement('div');
-    b.className = 'bubble ' + (who==='me' ? 'me' : who==='peer' ? 'peer' : 'sys');
-    b.innerHTML = text;
-    line.appendChild(b);
-    messages.appendChild(line);
-    messages.scrollTop = messages.scrollHeight;
-  }
-  function log(html, cls){
-    addBubble(html, cls==='sys' ? 'sys' : cls==='me' ? 'me' : 'peer');
-  }
-  function setStatus(text){ statusBadge.textContent = text; }
-  function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])) }
+    // chat bubble helpers
+    function addBubble(text, who){
+        const line = document.createElement('div');
+        line.className = 'line ' + (who==='me' ? 'from-me' : who==='peer' ? 'from-peer' : 'from-sys');
+        const b = document.createElement('div');
+        b.className = 'bubble ' + (who==='me' ? 'me' : who==='peer' ? 'peer' : 'sys');
+        b.innerHTML = text;
+        line.appendChild(b);
+        messages.appendChild(line);
+        messages.scrollTop = messages.scrollHeight;
+    }
+    function log(html, cls){
+        addBubble(html, cls==='sys' ? 'sys' : cls==='me' ? 'me' : 'peer');
+    }
+    function setStatus(text){ statusBadge.textContent = text; }
+    function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':m==='"'?'&quot;':'&#39;' }[m])) }
 
-  // ===== Connect flow =====
-  $('createBtn').onclick = () => {
-    isHost = true;
-    peer = new Peer();
-    peer.on('open', id => {
-      showConnect(`Room ID: ${id}`);
-      log(`<span class="sys">Room created: <b>${id}</b></span>`, 'sys');
-      // (no popup) tell host how to load
-      log(`<span class="sys">Host: send <code>/load &lt;URL&gt;</code> to start a video (mp4/webm/m3u8)</span>`, 'sys');
+    // ===== Connect flow (Existing Functionality) =====
+    $('createBtn').onclick = () => {
+        isHost = true;
+        peer = new Peer();
+        peer.on('open', id => {
+            showConnect(`Room ID: ${id}`);
+            log(`<span class="sys">Room created: <b>${id}</b></span>`, 'sys');
+            // (no popup) tell host how to load
+            log(`<span class="sys">Host: send <code>/load &lt;URL&gt;</code> or <code>/vib &lt;seconds&gt;</code></span>`, 'sys');
+        });
+        peer.on('connection', c => {
+            conn = c; wireConnection(); toSession('host');
+        });
+    };
+
+    $('joinBtn').onclick = tryJoin;
+    $('roomId').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
+
+    function tryJoin(){
+        const id = $('roomId').value.trim();
+        if (!id) { showConnect('Enter a room ID.'); $('roomId').focus(); return; }
+        isHost = false;
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect(id);
+            conn.on('open', () => {
+                wireConnection(); toSession('guest');
+                log(`<span class="sys">Joined room. Waiting for host to load a video…</span>`, 'sys');
+            });
+        });
+    }
+
+    // ===== NEW: VIBRATION API Function =====
+    function applyVibration(pattern) {
+        if (typeof navigator.vibrate === 'function') {
+            const success = navigator.vibrate(pattern);
+            if (!success) {
+                console.warn('Vibration API request failed (e.g., duration too long, device inactive).');
+            }
+        } else {
+            console.warn('Vibration API not supported on this device/browser.');
+        }
+    }
+    // ===== /NEW: VIBRATION API Function =====
+
+    function wireConnection(){
+        conn.on('data', data => {
+            if (data.type === 'chat'){
+                log(`<b>Peer:</b> ${escapeHtml(data.text)}`, 'peer');
+            } else if (data.type === 'cmd' && data.cmd === 'load'){
+                loadMedia(data.url, false);
+            } else if (data.type === 'sync'){
+                applySync(data);
+            } 
+            // --- NEW: Handle incoming vibration command ---
+            else if (data.type === 'vibrate'){
+                applyVibration(data.pattern);
+                const patternStr = Array.isArray(data.pattern) ? data.pattern.join(',') : data.pattern;
+                log(`<span class="sys">Vibration Received from Host (MS: ${patternStr})</span>`, 'sys');
+            }
+            // --- /NEW: Handle incoming vibration command ---
+        });
+        conn.on('close', () => location.reload());
+    }
+
+    // ===== Chat (Enter to send, /load or /vib for host) (MODIFIED) =====
+    $('sendBtn').onclick = sendMsg;
+    $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+    
+    // Helper function for the /vib logic
+    const secToMs = (val) => Math.round(parseFloat(val) * 1000);
+
+    function sendMsg(){
+        const el = $('msgInput'), text = el.value.trim();
+        if (!text) return;
+        
+        if (isHost && text.startsWith('/load ')){
+            const url = text.slice(6).trim();
+            if (url) loadMedia(url, true);
+            el.value = ''; return;
+        
+        // --- NEW: /vib command handler ---
+        } else if (isHost && text.startsWith('/vib ')){
+            const payload = text.slice(5).trim();
+            if (!payload) { 
+                log('<span class="sys">Usage: /vib &lt;duration_seconds&gt; (e.g., /vib 1.5) or /vib &lt;pattern_sec&gt; (e.g., /vib 0.1,0.5,0.1)</span>', 'sys'); 
+                el.value = ''; 
+                return; 
+            }
+            
+            let pattern;
+            let secInput = payload;
+
+            if (payload.includes(',')) {
+                // Handle pattern array (e.g., 0.1,0.5,0.1)
+                const parts = payload.split(',');
+                pattern = parts.map(sec => secToMs(sec));
+            } else {
+                // Handle single duration (e.g., 1.5)
+                pattern = secToMs(payload);
+            }
+            
+            // Check for invalid conversion (e.g. non-numeric input)
+            if (pattern === 0 || (Array.isArray(pattern) && pattern.some(isNaN))) {
+                log('<span class="sys">Error: Invalid duration or pattern provided.</span>', 'sys');
+                el.value = ''; 
+                return;
+            }
+
+            // Trigger vibration locally on the host and broadcast to the peer
+            applyVibration(pattern);
+            conn?.send({type:'vibrate', pattern});
+            const patternStr = Array.isArray(pattern) ? pattern.join(',') : pattern;
+            log(`<span class="sys">Vibration Command Sent (${secInput}s): Converted to MS: ${patternStr}</span>`, 'sys');
+            el.value = ''; 
+            return;
+        // --- /NEW: /vib command handler ---
+        
+        } else {
+            // Existing chat message logic
+            log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
+            conn?.send({type:'chat', text});
+            el.value = '';
+        }
+    }
+
+    // ===== Media loading (HTML5 + HLS) (Existing Functionality) =====
+    function cleanup(){
+        if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
+        player.pause(); player.removeAttribute('src'); player.load();
+        videoLoaded = false;
+    }
+
+    function loadMedia(url, broadcast){
+        cleanup();
+        setStatus('Loading…');
+
+        if (url.toLowerCase().includes('.m3u8')){
+            if (window.Hls && Hls.isSupported()){
+                hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
+                hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
+                hls.loadSource(url);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
+            } else if (player.canPlayType('application/vnd.apple.mpegurl')){
+                player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+            } else {
+                setStatus('HLS unsupported in this browser'); return;
+            }
+        } else {
+            player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+        }
+
+        if (broadcast){
+            conn?.send({type:'cmd', cmd:'load', url});
+            log(`<span class="sys">Loaded: ${escapeHtml(url)}</span>`, 'sys');
+        } else {
+            log(`<span class="sys">Source set by host</span>`, 'sys');
+        }
+    }
+
+    // ===== Sync host -> guest (Existing Functionality) =====
+    player.addEventListener('play', () => {
+        if (!isHost || !videoLoaded) return;
+        conn?.send({type:'sync', action:'play', time:player.currentTime});
     });
-    peer.on('connection', c => {
-      conn = c; wireConnection(); toSession('host');
+    player.addEventListener('pause', () => {
+        if (!isHost || !videoLoaded) return;
+        conn?.send({type:'sync', action:'pause', time:player.currentTime});
     });
-  };
-
-  $('joinBtn').onclick = tryJoin;
-  $('roomId').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
-
-  function tryJoin(){
-    const id = $('roomId').value.trim();
-    if (!id) { showConnect('Enter a room ID.'); $('roomId').focus(); return; }
-    isHost = false;
-    peer = new Peer();
-    peer.on('open', () => {
-      conn = peer.connect(id);
-      conn.on('open', () => {
-        wireConnection(); toSession('guest');
-        log(`<span class="sys">Joined room. Waiting for host to load a video…</span>`, 'sys');
-      });
+    let seekTimer;
+    player.addEventListener('seeked', () => {
+        if (!isHost || !videoLoaded) return;
+        clearTimeout(seekTimer);
+        seekTimer = setTimeout(()=> {
+            conn?.send({type:'sync', action:'seek', time:player.currentTime});
+        }, 80);
     });
-  }
 
-  function wireConnection(){
-    conn.on('data', data => {
-      if (data.type === 'chat'){
-        log(`<b>Peer:</b> ${escapeHtml(data.text)}`, 'peer');
-      } else if (data.type === 'cmd' && data.cmd === 'load'){
-        loadMedia(data.url, false);
-      } else if (data.type === 'sync'){
-        applySync(data);
-      }
-    });
-    conn.on('close', () => location.reload());
-  }
-
-  // ===== Chat (Enter to send, /load for host) =====
-  $('sendBtn').onclick = sendMsg;
-  $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
-  function sendMsg(){
-    const el = $('msgInput'), text = el.value.trim();
-    if (!text) return;
-    if (isHost && text.startsWith('/load ')){
-      const url = text.slice(6).trim();
-      if (url) loadMedia(url, true);
-      el.value = ''; return;
-    }
-    log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
-    conn?.send({type:'chat', text});
-    el.value = '';
-  }
-
-  // ===== Media loading (HTML5 + HLS) =====
-  function cleanup(){
-    if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
-    player.pause(); player.removeAttribute('src'); player.load();
-    videoLoaded = false;
-  }
-
-  function loadMedia(url, broadcast){
-    cleanup();
-    setStatus('Loading…');
-
-    if (url.toLowerCase().includes('.m3u8')){
-      if (window.Hls && Hls.isSupported()){
-        hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
-        hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
-        hls.loadSource(url);
-        hls.attachMedia(player);
-        hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
-      } else if (player.canPlayType('application/vnd.apple.mpegurl')){
-        player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
-      } else {
-        setStatus('HLS unsupported in this browser'); return;
-      }
-    } else {
-      player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+    function applySync(msg){
+        if (!videoLoaded) return;
+        const diff = Math.abs(player.currentTime - msg.time);
+        if (diff > 0.4) player.currentTime = msg.time;
+        if (msg.action === 'play')  player.play().catch(()=>{});
+        if (msg.action === 'pause') player.pause();
     }
 
-    if (broadcast){
-      conn?.send({type:'cmd', cmd:'load', url});
-      log(`<span class="sys">Loaded: ${escapeHtml(url)}</span>`, 'sys');
-    } else {
-      log(`<span class="sys">Source set by host</span>`, 'sys');
-    }
-  }
+    /* ===== ADDED: keyboard-aware chat (video remains visible) (Existing Functionality) ===== */
+    (function setupKeyboardAwareChat(){
+        const vv = window.visualViewport;
+        const composer = document.querySelector('.composer');
+        function setVar(name, val){ document.documentElement.style.setProperty(name, val); }
+        function measureComposer(){
+            if (composer) setVar('--composer-h', composer.offsetHeight + 'px');
+        }
+        function updateKeyboardOffset(){
+            const kb = vv ? Math.max(0, (window.innerHeight - vv.height - vv.offsetTop)) : 0;
+            const isOpen = kb > 120; // threshold to ignore tiny resizes
+            setVar('--kbd', (isOpen ? kb : 0) + 'px');
+            document.body.classList.toggle('kbd-open', isOpen);
+            measureComposer();
+        }
+        window.addEventListener('load', updateKeyboardOffset, { once:true });
+        window.addEventListener('resize', updateKeyboardOffset);
+        window.addEventListener('orientationchange', updateKeyboardOffset);
+        if (vv){
+            vv.addEventListener('resize', updateKeyboardOffset);
+            vv.addEventListener('scroll', updateKeyboardOffset);
+        }
+        const msgInput = document.getElementById('msgInput');
+        if (msgInput){
+            msgInput.addEventListener('focus', () => { setTimeout(updateKeyboardOffset, 0); });
+            msgInput.addEventListener('blur',  () => { setTimeout(updateKeyboardOffset, 0); });
+        }
+    })();
+    /* ===== /ADDED ===== */
 
-  // ===== Sync host -> guest =====
-  player.addEventListener('play', () => {
-    if (!isHost || !videoLoaded) return;
-    conn?.send({type:'sync', action:'play', time:player.currentTime});
-  });
-  player.addEventListener('pause', () => {
-    if (!isHost || !videoLoaded) return;
-    conn?.send({type:'sync', action:'pause', time:player.currentTime});
-  });
-  let seekTimer;
-  player.addEventListener('seeked', () => {
-    if (!isHost || !videoLoaded) return;
-    clearTimeout(seekTimer);
-    seekTimer = setTimeout(()=> {
-      conn?.send({type:'sync', action:'seek', time:player.currentTime});
-    }, 80);
-  });
-
-  function applySync(msg){
-    if (!videoLoaded) return;
-    const diff = Math.abs(player.currentTime - msg.time);
-    if (diff > 0.4) player.currentTime = msg.time;
-    if (msg.action === 'play')  player.play().catch(()=>{});
-    if (msg.action === 'pause') player.pause();
-  }
-
-  /* ===== ADDED: keyboard-aware chat (video remains visible) ===== */
-  (function setupKeyboardAwareChat(){
-    const vv = window.visualViewport;
-    const composer = document.querySelector('.composer');
-    function setVar(name, val){ document.documentElement.style.setProperty(name, val); }
-    function measureComposer(){
-      if (composer) setVar('--composer-h', composer.offsetHeight + 'px');
-    }
-    function updateKeyboardOffset(){
-      const kb = vv ? Math.max(0, (window.innerHeight - vv.height - vv.offsetTop)) : 0;
-      const isOpen = kb > 120; // threshold to ignore tiny resizes
-      setVar('--kbd', (isOpen ? kb : 0) + 'px');
-      document.body.classList.toggle('kbd-open', isOpen);
-      measureComposer();
-    }
-    window.addEventListener('load', updateKeyboardOffset, { once:true });
-    window.addEventListener('resize', updateKeyboardOffset);
-    window.addEventListener('orientationchange', updateKeyboardOffset);
-    if (vv){
-      vv.addEventListener('resize', updateKeyboardOffset);
-      vv.addEventListener('scroll', updateKeyboardOffset);
-    }
-    const msgInput = document.getElementById('msgInput');
-    if (msgInput){
-      msgInput.addEventListener('focus', () => { setTimeout(updateKeyboardOffset, 0); });
-      msgInput.addEventListener('blur',  () => { setTimeout(updateKeyboardOffset, 0); });
-    }
-  })();
-  /* ===== /ADDED ===== */
-
-  // Init default fit/fill on load
-  window.addEventListener('load', pickDefaultMode);
+    // Init default fit/fill on load (Existing Functionality)
+    window.addEventListener('load', pickDefaultMode);
 </script>
 </body>
 </html>
