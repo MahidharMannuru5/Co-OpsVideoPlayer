@@ -240,7 +240,7 @@
     fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
     window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
 
-    // ===== UI helpers (Existing Functionality - MODIFIED log to be silent) =====
+    // ===== UI helpers (MODIFIED log to be silent for system messages) =====
     function showConnect(msg){ $('connectLog').textContent = msg || ''; }
     function toSession(role){
         connectScreen.classList.add('hidden');
@@ -264,26 +264,28 @@
         messages.scrollTop = messages.scrollHeight;
     }
     
-    // MODIFIED: This function now respects silent logging requests
+    // MODIFIED: Only show chat messages, suppress 'sys' messages
     function log(html, cls){
-        // Only show chat messages, ignore all 'sys' messages
-        if (cls === 'sys') return; 
-
+        if (cls === 'sys') {
+            console.log("LOG: Suppressed system message: " + html.replace(/<[^>]*>?/gm, ''));
+            return;
+        } 
         addBubble(html, cls==='me' ? 'me' : 'peer');
     }
     function setStatus(text){ statusBadge.textContent = text; }
     function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':m==='"'?'&quot;':'&#39;' }[m])) }
 
-    // ===== Connect flow (Existing Functionality - MODIFIED log to be silent) =====
+    // ===== Connect flow (Existing Functionality - MODIFIED to be silent) =====
     $('createBtn').onclick = () => {
         isHost = true;
         peer = new Peer();
         peer.on('open', id => {
             showConnect(`Room ID: ${id}`);
-            // SILENT: Removed 'Room created' log
+            console.log(`DEBUG: Room created. ID: ${id}`); // DEBUG LOG
         });
         peer.on('connection', c => {
             conn = c; wireConnection(); toSession('host');
+            console.log('DEBUG: Peer connection established (Host)'); // DEBUG LOG
         });
     };
 
@@ -299,22 +301,25 @@
             conn = peer.connect(id);
             conn.on('open', () => {
                 wireConnection(); toSession('guest');
-                // SILENT: Removed 'Joined room' log
+                console.log(`DEBUG: Joined room successfully (Guest)`); // DEBUG LOG
             });
         });
     }
 
-    // ===== VIBRATION API & DOWNLOAD SNAPSHOT Functions (NEW) =====
+    // ===== VIBRATION API & DOWNLOAD SNAPSHOT Functions =====
     function applyVibration(pattern) {
         if (typeof navigator.vibrate === 'function') {
+            console.log(`DEBUG: Triggering vibration pattern: ${pattern}`); // DEBUG LOG
             navigator.vibrate(pattern);
+        } else {
+            console.warn('Vibration API not supported on this device/browser.');
         }
     }
     
     // NEW: Captures the current video frame on the guest side
     function captureVideoFrame() {
         if (!player.videoWidth || !player.videoHeight) {
-            console.warn("Video not loaded or size is zero. Cannot capture frame.");
+            console.error("CAPTURE FAILED: Video not loaded, size is zero, or cross-origin frame access denied."); // DEBUG LOG
             return null;
         }
 
@@ -322,11 +327,20 @@
         canvas.width = player.videoWidth;
         canvas.height = player.videoHeight;
         
-        // Draw the current video frame onto the canvas
-        canvas.getContext('2d').drawImage(player, 0, 0, canvas.width, canvas.height);
-        
-        // Return image data as a Base64 string
-        return canvas.toDataURL('image/jpeg'); 
+        try {
+            // Draw the current video frame onto the canvas
+            canvas.getContext('2d').drawImage(player, 0, 0, canvas.width, canvas.height);
+            console.log("DEBUG: Frame captured successfully to canvas."); // DEBUG LOG
+            
+            // Return image data as a Base64 string
+            return canvas.toDataURL('image/jpeg');
+        } catch (e) {
+            // This error often happens if the video source is on a different domain (cross-origin)
+            // without CORS headers, which prevents canvas drawing.
+            console.error("CAPTURE ERROR: Failed to draw video to canvas.", e);
+            console.error("HINT: Cross-origin video content requires the 'crossorigin' attribute on the <video> tag and correct CORS headers on the video source.");
+            return null;
+        }
     }
 
     // NEW: Triggers a file download on the host side
@@ -342,8 +356,7 @@
         a.click(); 
         document.body.removeChild(a);
         
-        // Optional: Log a message that ONLY the host sees in console
-        console.log(`Snapshot saved to downloads: ${a.download}`);
+        console.log(`DEBUG: Snapshot download triggered: ${a.download}`); // DEBUG LOG
     }
 
     // ===== wireConnection (MODIFIED to handle /snap response) =====
@@ -362,18 +375,26 @@
             }
             // --- NEW: Handle incoming /snap command on GUEST ---
             else if (data.type === 'cmd' && data.cmd === 'snap'){
+                console.log('DEBUG: Guest received /snap command. Capturing frame...'); // DEBUG LOG
                 const imageData = captureVideoFrame();
                 if (imageData) {
                     // Send image data back to the host immediately
                     conn?.send({type: 'snap_data', data: imageData});
+                    console.log('DEBUG: Guest sent snap data back to Host.'); // DEBUG LOG
+                } else {
+                    console.error('DEBUG: Guest failed to capture frame. Not sending data.');
                 }
             }
             // --- NEW: Handle snap_data response on HOST ---
             else if (data.type === 'snap_data' && isHost){
+                console.log('DEBUG: Host received snap data from Guest. Triggering download...'); // DEBUG LOG
                 forceDownload(data.data);
             }
         });
-        conn.on('close', () => location.reload());
+        conn.on('close', () => {
+            console.warn('CONNECTION CLOSED: Peer connection was closed. Reloading page.');
+            location.reload();
+        });
     }
 
     // ===== Chat (MODIFIED: /load, /vib, /snap) =====
@@ -392,10 +413,13 @@
             if (text.startsWith('/load ')) {
                 const url = text.slice(6).trim();
                 if (url) loadMedia(url, true);
-                el.value = ''; return;
+                el.value = ''; 
+                console.log(`DEBUG: Host command: /load ${url}`); // DEBUG LOG
+                return;
             
             } else if (text.startsWith('/vib ')) {
                 const payload = text.slice(5).trim();
+                // ... (existing /vib logic for parsing and sending) ...
                 if (!payload) { console.error('VIB: Missing payload'); el.value = ''; return; }
                 
                 let pattern;
@@ -406,16 +430,26 @@
                     pattern = secToMs(payload);
                 }
                 
-                // No need to check for isNaN as the map/cast handles non-numeric parts by returning NaN, which we can ignore
+                if (pattern === 0 || (Array.isArray(pattern) && pattern.some(isNaN))) {
+                    console.error('VIB: Invalid duration or pattern.'); el.value = ''; return;
+                }
+
                 applyVibration(pattern);
                 conn?.send({type:'vibrate', pattern});
                 el.value = ''; 
+                console.log(`DEBUG: Host command: /vib ${payload} (Sent as ${pattern})`); // DEBUG LOG
                 return;
             
             } else if (text.toLowerCase() === '/snap') {
                 // NEW: Send snap command to guest
-                conn?.send({type:'cmd', cmd:'snap'});
+                if (!conn) {
+                    console.error('COMMAND FAILED: /snap requires an active peer connection.');
+                    el.value = '';
+                    return;
+                }
+                conn.send({type:'cmd', cmd:'snap'});
                 el.value = ''; 
+                console.log('DEBUG: Host command: /snap sent to Guest.'); // DEBUG LOG
                 return;
             }
         }
@@ -426,7 +460,7 @@
         el.value = '';
     }
 
-    // ===== Media loading (HTML5 + HLS) (Existing Functionality - MODIFIED log to be silent) =====
+    // ===== Media loading (HTML5 + HLS) (Existing Functionality) =====
     function cleanup(){
         if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
         player.pause(); player.removeAttribute('src'); player.load();
@@ -435,7 +469,7 @@
 
     function loadMedia(url, broadcast){
         cleanup();
-        setStatus('Loading…'); // ONLY status badge shows this, not chat log
+        setStatus('Loading…'); 
 
         if (url.toLowerCase().includes('.m3u8')){
             // ... existing HLS logic ...
@@ -443,15 +477,12 @@
             player.src = url; 
             player.onloadedmetadata = ()=>{ 
                 videoLoaded = true; 
-                setStatus('Ready'); // ONLY status badge shows this 
+                setStatus('Ready');
             };
         }
 
         if (broadcast){
             conn?.send({type:'cmd', cmd:'load', url});
-            // SILENT: Removed log for Host
-        } else {
-            // SILENT: Removed log for Guest
         }
     }
 
@@ -481,7 +512,7 @@
         if (msg.action === 'pause') player.pause();
     }
 
-    /* ===== ADDED: keyboard-aware chat (video remains visible) (Existing Functionality) ===== */
+    /* ===== ADDED: keyboard-aware chat (Existing Functionality) ===== */
     (function setupKeyboardAwareChat(){
         const vv = window.visualViewport;
         const composer = document.querySelector('.composer');
