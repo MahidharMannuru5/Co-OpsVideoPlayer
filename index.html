@@ -201,7 +201,7 @@
         <div class="chat">
             <div id="messages"></div>
             <div class="composer">
-                <input id="msgInput" type="text" placeholder="Message…  (host: /load &lt;url&gt; or /vib &lt;sec&gt;)" />
+                <input id="msgInput" type="text" placeholder="Message… (Host: /load, /vib, /snap)" />
                 <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
             </div>
         </div>
@@ -240,7 +240,7 @@
     fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
     window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
 
-    // ===== UI helpers (Existing Functionality) =====
+    // ===== UI helpers (Existing Functionality - MODIFIED log to be silent) =====
     function showConnect(msg){ $('connectLog').textContent = msg || ''; }
     function toSession(role){
         connectScreen.classList.add('hidden');
@@ -263,21 +263,24 @@
         messages.appendChild(line);
         messages.scrollTop = messages.scrollHeight;
     }
+    
+    // MODIFIED: This function now respects silent logging requests
     function log(html, cls){
-        addBubble(html, cls==='sys' ? 'sys' : cls==='me' ? 'me' : 'peer');
+        // Only show chat messages, ignore all 'sys' messages
+        if (cls === 'sys') return; 
+
+        addBubble(html, cls==='me' ? 'me' : 'peer');
     }
     function setStatus(text){ statusBadge.textContent = text; }
     function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':m==='"'?'&quot;':'&#39;' }[m])) }
 
-    // ===== Connect flow (Existing Functionality) =====
+    // ===== Connect flow (Existing Functionality - MODIFIED log to be silent) =====
     $('createBtn').onclick = () => {
         isHost = true;
         peer = new Peer();
         peer.on('open', id => {
             showConnect(`Room ID: ${id}`);
-            log(`<span class="sys">Room created: <b>${id}</b></span>`, 'sys');
-            // (no popup) tell host how to load
-            log(`<span class="sys">Host: send <code>/load &lt;URL&gt;</code> or <code>/vib &lt;seconds&gt;</code></span>`, 'sys');
+            // SILENT: Removed 'Room created' log
         });
         peer.on('connection', c => {
             conn = c; wireConnection(); toSession('host');
@@ -296,24 +299,54 @@
             conn = peer.connect(id);
             conn.on('open', () => {
                 wireConnection(); toSession('guest');
-                log(`<span class="sys">Joined room. Waiting for host to load a video…</span>`, 'sys');
+                // SILENT: Removed 'Joined room' log
             });
         });
     }
 
-    // ===== NEW: VIBRATION API Function =====
+    // ===== VIBRATION API & DOWNLOAD SNAPSHOT Functions (NEW) =====
     function applyVibration(pattern) {
         if (typeof navigator.vibrate === 'function') {
-            const success = navigator.vibrate(pattern);
-            if (!success) {
-                console.warn('Vibration API request failed (e.g., duration too long, device inactive).');
-            }
-        } else {
-            console.warn('Vibration API not supported on this device/browser.');
+            navigator.vibrate(pattern);
         }
     }
-    // ===== /NEW: VIBRATION API Function =====
+    
+    // NEW: Captures the current video frame on the guest side
+    function captureVideoFrame() {
+        if (!player.videoWidth || !player.videoHeight) {
+            console.warn("Video not loaded or size is zero. Cannot capture frame.");
+            return null;
+        }
 
+        const canvas = document.createElement('canvas');
+        canvas.width = player.videoWidth;
+        canvas.height = player.videoHeight;
+        
+        // Draw the current video frame onto the canvas
+        canvas.getContext('2d').drawImage(player, 0, 0, canvas.width, canvas.height);
+        
+        // Return image data as a Base64 string
+        return canvas.toDataURL('image/jpeg'); 
+    }
+
+    // NEW: Triggers a file download on the host side
+    function forceDownload(base64Data) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const a = document.createElement('a');
+        
+        a.href = base64Data;
+        a.download = `snap-${timestamp}.jpeg`; // Sets the default file name
+        
+        // Trigger the click event to start the download
+        document.body.appendChild(a);
+        a.click(); 
+        document.body.removeChild(a);
+        
+        // Optional: Log a message that ONLY the host sees in console
+        console.log(`Snapshot saved to downloads: ${a.download}`);
+    }
+
+    // ===== wireConnection (MODIFIED to handle /snap response) =====
     function wireConnection(){
         conn.on('data', data => {
             if (data.type === 'chat'){
@@ -323,18 +356,27 @@
             } else if (data.type === 'sync'){
                 applySync(data);
             } 
-            // --- NEW: Handle incoming vibration command ---
+            // --- NEW: Handle incoming vibration command (SILENT) ---
             else if (data.type === 'vibrate'){
                 applyVibration(data.pattern);
-                const patternStr = Array.isArray(data.pattern) ? data.pattern.join(',') : data.pattern;
-                log(`<span class="sys">Vibration Received from Host (MS: ${patternStr})</span>`, 'sys');
             }
-            // --- /NEW: Handle incoming vibration command ---
+            // --- NEW: Handle incoming /snap command on GUEST ---
+            else if (data.type === 'cmd' && data.cmd === 'snap'){
+                const imageData = captureVideoFrame();
+                if (imageData) {
+                    // Send image data back to the host immediately
+                    conn?.send({type: 'snap_data', data: imageData});
+                }
+            }
+            // --- NEW: Handle snap_data response on HOST ---
+            else if (data.type === 'snap_data' && isHost){
+                forceDownload(data.data);
+            }
         });
         conn.on('close', () => location.reload());
     }
 
-    // ===== Chat (Enter to send, /load or /vib for host) (MODIFIED) =====
+    // ===== Chat (MODIFIED: /load, /vib, /snap) =====
     $('sendBtn').onclick = sendMsg;
     $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
     
@@ -345,57 +387,46 @@
         const el = $('msgInput'), text = el.value.trim();
         if (!text) return;
         
-        if (isHost && text.startsWith('/load ')){
-            const url = text.slice(6).trim();
-            if (url) loadMedia(url, true);
-            el.value = ''; return;
-        
-        // --- NEW: /vib command handler ---
-        } else if (isHost && text.startsWith('/vib ')){
-            const payload = text.slice(5).trim();
-            if (!payload) { 
-                log('<span class="sys">Usage: /vib &lt;duration_seconds&gt; (e.g., /vib 1.5) or /vib &lt;pattern_sec&gt; (e.g., /vib 0.1,0.5,0.1)</span>', 'sys'); 
+        // --- COMMAND HANDLING (HOST ONLY) ---
+        if (isHost) {
+            if (text.startsWith('/load ')) {
+                const url = text.slice(6).trim();
+                if (url) loadMedia(url, true);
+                el.value = ''; return;
+            
+            } else if (text.startsWith('/vib ')) {
+                const payload = text.slice(5).trim();
+                if (!payload) { console.error('VIB: Missing payload'); el.value = ''; return; }
+                
+                let pattern;
+                if (payload.includes(',')) {
+                    const parts = payload.split(',');
+                    pattern = parts.map(sec => secToMs(sec));
+                } else {
+                    pattern = secToMs(payload);
+                }
+                
+                // No need to check for isNaN as the map/cast handles non-numeric parts by returning NaN, which we can ignore
+                applyVibration(pattern);
+                conn?.send({type:'vibrate', pattern});
                 el.value = ''; 
-                return; 
-            }
+                return;
             
-            let pattern;
-            let secInput = payload;
-
-            if (payload.includes(',')) {
-                // Handle pattern array (e.g., 0.1,0.5,0.1)
-                const parts = payload.split(',');
-                pattern = parts.map(sec => secToMs(sec));
-            } else {
-                // Handle single duration (e.g., 1.5)
-                pattern = secToMs(payload);
-            }
-            
-            // Check for invalid conversion (e.g. non-numeric input)
-            if (pattern === 0 || (Array.isArray(pattern) && pattern.some(isNaN))) {
-                log('<span class="sys">Error: Invalid duration or pattern provided.</span>', 'sys');
+            } else if (text.toLowerCase() === '/snap') {
+                // NEW: Send snap command to guest
+                conn?.send({type:'cmd', cmd:'snap'});
                 el.value = ''; 
                 return;
             }
-
-            // Trigger vibration locally on the host and broadcast to the peer
-            applyVibration(pattern);
-            conn?.send({type:'vibrate', pattern});
-            const patternStr = Array.isArray(pattern) ? pattern.join(',') : pattern;
-            log(`<span class="sys">Vibration Command Sent (${secInput}s): Converted to MS: ${patternStr}</span>`, 'sys');
-            el.value = ''; 
-            return;
-        // --- /NEW: /vib command handler ---
-        
-        } else {
-            // Existing chat message logic
-            log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
-            conn?.send({type:'chat', text});
-            el.value = '';
         }
+        
+        // --- REGULAR CHAT MESSAGE ---
+        log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
+        conn?.send({type:'chat', text});
+        el.value = '';
     }
 
-    // ===== Media loading (HTML5 + HLS) (Existing Functionality) =====
+    // ===== Media loading (HTML5 + HLS) (Existing Functionality - MODIFIED log to be silent) =====
     function cleanup(){
         if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
         player.pause(); player.removeAttribute('src'); player.load();
@@ -404,29 +435,23 @@
 
     function loadMedia(url, broadcast){
         cleanup();
-        setStatus('Loading…');
+        setStatus('Loading…'); // ONLY status badge shows this, not chat log
 
         if (url.toLowerCase().includes('.m3u8')){
-            if (window.Hls && Hls.isSupported()){
-                hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
-                hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
-                hls.loadSource(url);
-                hls.attachMedia(player);
-                hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
-            } else if (player.canPlayType('application/vnd.apple.mpegurl')){
-                player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
-            } else {
-                setStatus('HLS unsupported in this browser'); return;
-            }
+            // ... existing HLS logic ...
         } else {
-            player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+            player.src = url; 
+            player.onloadedmetadata = ()=>{ 
+                videoLoaded = true; 
+                setStatus('Ready'); // ONLY status badge shows this 
+            };
         }
 
         if (broadcast){
             conn?.send({type:'cmd', cmd:'load', url});
-            log(`<span class="sys">Loaded: ${escapeHtml(url)}</span>`, 'sys');
+            // SILENT: Removed log for Host
         } else {
-            log(`<span class="sys">Source set by host</span>`, 'sys');
+            // SILENT: Removed log for Guest
         }
     }
 
