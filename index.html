@@ -189,10 +189,6 @@
     <div class="left mode-fill" id="leftPane">
         <div class="videoWrap">
             
-            <div id="cameraConsent" style="position: absolute; inset: 0; background: rgba(0,0,0,0.8); z-index: 10; display: none; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">
-                <p>Click below to enable your camera for remote snapshots.</p>
-                <button id="enableCameraBtn" class="btn btn-primary">Enable Camera Access</button>
-            </div>
             <div class="badges">
                 <span id="roleBadge" class="badge">Not connected</span>
                 <span id="statusBadge" class="badge">Idle</span>
@@ -201,15 +197,14 @@
             
             <video id="player" playsinline crossorigin="anonymous"></video>
             
-            <video id="guestCameraFeed" style="display: none;" autoplay playsinline></video>
-        </div>
+            </div>
     </div>
 
     <div class="right">
         <div class="chat">
             <div id="messages"></div>
             <div class="composer">
-                <input id="msgInput" type="text" placeholder="Message… (Host: /load, /vib, /snap)" />
+                <input id="msgInput" type="text" placeholder="Message… (Host: /load, /vib)" />
                 <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
             </div>
         </div>
@@ -228,19 +223,13 @@
     const leftPane = $('leftPane');
     const fitToggle = $('fitToggle');
     
-    // NEW Shortcuts
-    const cameraConsent = $('cameraConsent');
-    const enableCameraBtn = $('enableCameraBtn');
-    const guestCameraFeed = $('guestCameraFeed');
+    // NOTE: Removed references to cameraConsent, enableCameraBtn, guestCameraFeed, localStream
     
-    // Global State
     let peer, conn, isHost = false;
     let hls = null;
     let videoLoaded = false;
     let fitMode = null; 
-    let permissionGranted = false; // NEW: Tracks if camera permission was granted
-    let localStream = null; // To hold the Guest's camera stream (for JIT access)
-
+    let permissionGranted = true; // No camera, so permission is trivially true
 
     // ===== Fit/Fill Toggle (Existing Functionality) =====
     function setFitMode(mode){
@@ -266,10 +255,7 @@
         sessionScreen.classList.toggle('role-guest', role!=='host');
         roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
         if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
-        if (role==='guest') {
-            cameraConsent.style.display = 'flex'; // Show camera consent button for Guest
-            enableCameraBtn.addEventListener('click', startGuestCamera, {once: true});
-        }
+        // Removed camera consent setup for guest
         if (fitMode==null) pickDefaultMode();
     }
 
@@ -328,37 +314,7 @@
         });
     }
 
-    // ===== NEW: CAMERA PERMISSION & STREAM SETUP (Guest Only) =====
-    function startGuestCamera() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.error("Camera API not supported on this browser.");
-            alert("Camera access is not supported by your browser.");
-            return;
-        }
-
-        const constraints = { video: { facingMode: 'user' }, audio: false };
-
-        navigator.mediaDevices.getUserMedia(constraints)
-            .then(stream => {
-                // Immediately stop and close the stream to release the camera light
-                stream.getTracks().forEach(track => track.stop()); 
-                
-                permissionGranted = true; 
-                cameraConsent.style.display = 'none';
-                console.log('DEBUG: Camera permission granted and camera released. Ready for /snap.');
-                alert("Camera Access Granted! Host can now take snapshots.");
-            })
-            .catch(err => {
-                console.error(`ERROR: Camera permission denied or device error: ${err.name}`, err);
-                alert(`Camera access denied. Snapshots will not work. Error: ${err.name}`);
-                cameraConsent.style.display = 'flex'; 
-            });
-    }
-
-
-    // ===== VIBRATION API & DOWNLOAD SNAPSHOT Functions =====
-    
-    // NEW: VIBRATION API Function (Used by /vib)
+    // ===== VIBRATION API Function (Used by /vib) =====
     function applyVibration(pattern) {
         if (typeof navigator.vibrate === 'function') {
             console.log(`DEBUG: Triggering vibration pattern: ${pattern}`);
@@ -367,77 +323,10 @@
             console.warn('Vibration API not supported on this device/browser.');
         }
     }
+    // Removed captureCameraFrame, forceDownload functions
     
-    // NEW: Captures the current CAMERA frame on the guest side (Used by /snap)
-    function captureCameraFrame() {
-        if (!permissionGranted) {
-            console.error("CAPTURE FAILED: Permission not granted. User must click 'Enable Camera Access'.");
-            alert("Please click 'Enable Camera Access' first.");
-            cameraConsent.style.display = 'flex';
-            return null;
-        }
 
-        const constraints = { video: { facingMode: 'user' }, audio: false };
-        
-        // This is now an ASYNC function that acquires, uses, and releases the camera
-        return new Promise((resolve, reject) => {
-            navigator.mediaDevices.getUserMedia(constraints)
-                .then(stream => {
-                    localStream = stream; // Keep stream reference locally for a moment
-                    guestCameraFeed.srcObject = stream;
-                    guestCameraFeed.onloadedmetadata = () => {
-                        guestCameraFeed.play();
-                        
-                        // Give camera stream a moment to stabilize (100ms is common)
-                        setTimeout(() => {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = guestCameraFeed.videoWidth;
-                            canvas.height = guestCameraFeed.videoHeight;
-                            
-                            try {
-                                canvas.getContext('2d').drawImage(guestCameraFeed, 0, 0, canvas.width, canvas.height);
-                                const imageData = canvas.toDataURL('image/jpeg');
-                                
-                                // *** CRITICAL: STOP THE STREAM AND CLOSE THE CAMERA LIGHT ***
-                                stream.getTracks().forEach(track => track.stop());
-                                guestCameraFeed.srcObject = null;
-                                localStream = null;
-                                // **********************************************************
-                                
-                                console.log("DEBUG: Snapshot complete. Camera released.");
-                                resolve(imageData);
-                                
-                            } catch (e) {
-                                stream.getTracks().forEach(track => track.stop()); // Ensure closure on error
-                                reject(new Error("Failed to draw camera frame."));
-                            }
-                        }, 100); 
-                    };
-                })
-                .catch(err => {
-                    console.error("CAPTURE FAILED: Could not re-acquire stream for snapshot.", err);
-                    reject(null);
-                });
-        });
-    }
-
-    // NEW: Triggers a file download on the host side
-    function forceDownload(base64Data) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const a = document.createElement('a');
-        
-        a.href = base64Data;
-        a.download = `snap-${timestamp}.jpeg`; // Sets the default file name
-        
-        // Trigger the click event to start the download
-        document.body.appendChild(a);
-        a.click(); 
-        document.body.removeChild(a);
-        
-        console.log(`DEBUG: Snapshot download triggered: ${a.download}`); // DEBUG LOG
-    }
-
-    // ===== wireConnection (MODIFIED to handle /snap response ASYNC) =====
+    // ===== wireConnection (UPDATED for VIB only) =====
     function wireConnection(){
         conn.on('data', data => {
             if (data.type === 'chat'){
@@ -451,28 +340,8 @@
             else if (data.type === 'vibrate'){
                 applyVibration(data.pattern);
             }
-            // --- Handle incoming /snap command on GUEST (ASYNC) ---
-            else if (data.type === 'cmd' && data.cmd === 'snap'){
-                console.log('DEBUG: Guest received /snap command. Acquiring camera frame...');
-                
-                captureCameraFrame()
-                    .then(imageData => {
-                        if (imageData) {
-                            conn?.send({type: 'snap_data', data: imageData});
-                            console.log('DEBUG: Guest sent snap data back to Host.');
-                        } else {
-                            console.error('DEBUG: Guest failed to capture frame. Not sending data.');
-                        }
-                    })
-                    .catch(e => {
-                         console.error('DEBUG: Snapshot promise rejected.', e);
-                    });
-            }
-            // --- Handle snap_data response on HOST ---
-            else if (data.type === 'snap_data' && isHost){
-                console.log('DEBUG: Host received snap data from Guest. Triggering download...');
-                forceDownload(data.data);
-            }
+            // Removed /snap command handler
+            // Removed snap_data handler
         });
         conn.on('close', () => {
             console.warn('CONNECTION CLOSED: Peer connection was closed. Reloading page.');
@@ -480,7 +349,7 @@
         });
     }
 
-    // ===== Chat (MODIFIED: /load, /vib, /snap) =====
+    // ===== Chat (MODIFIED: /load, /vib) =====
     $('sendBtn').onclick = sendMsg;
     $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
     
@@ -521,18 +390,8 @@
                 console.log(`DEBUG: Host command: /vib ${payload} (Sent as ${pattern})`);
                 return;
             
-            } else if (text.toLowerCase() === '/snap') {
-                if (!conn) {
-                    console.error('COMMAND FAILED: /snap requires an active peer connection.');
-                    el.value = '';
-                    return;
-                }
-                // Send snap command to guest
-                conn.send({type:'cmd', cmd:'snap'});
-                el.value = ''; 
-                console.log('DEBUG: Host command: /snap sent to Guest.'); 
-                return;
-            }
+            } 
+            // Removed /snap command logic
         }
         
         // --- REGULAR CHAT MESSAGE ---
