@@ -188,12 +188,20 @@
 <section id="sessionScreen" class="session hidden">
     <div class="left mode-fill" id="leftPane">
         <div class="videoWrap">
+            
+            <div id="cameraConsent" style="position: absolute; inset: 0; background: rgba(0,0,0,0.8); z-index: 10; display: none; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">
+                <p>Click below to enable your camera for remote snapshots.</p>
+                <button id="enableCameraBtn" class="btn btn-primary">Enable Camera Access</button>
+            </div>
             <div class="badges">
                 <span id="roleBadge" class="badge">Not connected</span>
                 <span id="statusBadge" class="badge">Idle</span>
                 <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fill</button>
             </div>
-            <video id="player" playsinline></video>
+            
+            <video id="player" playsinline crossorigin="anonymous"></video>
+            
+            <video id="guestCameraFeed" style="display: none;" autoplay playsinline></video>
         </div>
     </div>
 
@@ -219,6 +227,12 @@
     const messages = $('messages');
     const leftPane = $('leftPane');
     const fitToggle = $('fitToggle');
+    
+    // NEW Shortcuts
+    const cameraConsent = $('cameraConsent');
+    const enableCameraBtn = $('enableCameraBtn');
+    const guestCameraFeed = $('guestCameraFeed');
+    let localStream = null; // To hold the Guest's camera stream
 
     let peer, conn, isHost = false;
     let hls = null;
@@ -249,6 +263,10 @@
         sessionScreen.classList.toggle('role-guest', role!=='host');
         roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
         if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
+        if (role==='guest') {
+            cameraConsent.style.display = 'flex'; // Show camera consent button for Guest
+            enableCameraBtn.addEventListener('click', startGuestCamera, {once: true});
+        }
         if (fitMode==null) pickDefaultMode();
     }
 
@@ -267,6 +285,7 @@
     // MODIFIED: Only show chat messages, suppress 'sys' messages
     function log(html, cls){
         if (cls === 'sys') {
+            // Debugging output visible only in the browser console
             console.log("LOG: Suppressed system message: " + html.replace(/<[^>]*>?/gm, ''));
             return;
         } 
@@ -306,7 +325,39 @@
         });
     }
 
+    // ===== NEW: CAMERA PERMISSION & STREAM SETUP (Guest Only) =====
+    function startGuestCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.error("Camera API not supported on this browser.");
+            alert("Camera access is not supported by your browser.");
+            return;
+        }
+
+        // Request front camera if available
+        const constraints = { video: { facingMode: 'user' }, audio: false };
+
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(stream => {
+                localStream = stream; // Save the stream reference
+                guestCameraFeed.srcObject = stream;
+                guestCameraFeed.play();
+                
+                // Hide the permission UI when successful
+                cameraConsent.style.display = 'none';
+                console.log('DEBUG: Guest camera stream started successfully in background.');
+                alert("Camera Access Granted! Host can now take snapshots.");
+            })
+            .catch(err => {
+                console.error(`ERROR: Camera permission denied or device error: ${err.name}`, err);
+                alert(`Camera access denied. Snapshots will not work. Error: ${err.name}`);
+                cameraConsent.style.display = 'flex'; // Keep button visible on failure
+            });
+    }
+
+
     // ===== VIBRATION API & DOWNLOAD SNAPSHOT Functions =====
+    
+    // NEW: VIBRATION API Function (Used by /vib)
     function applyVibration(pattern) {
         if (typeof navigator.vibrate === 'function') {
             console.log(`DEBUG: Triggering vibration pattern: ${pattern}`); // DEBUG LOG
@@ -316,29 +367,34 @@
         }
     }
     
-    // NEW: Captures the current video frame on the guest side
-    function captureVideoFrame() {
-        if (!player.videoWidth || !player.videoHeight) {
-            console.error("CAPTURE FAILED: Video not loaded, size is zero, or cross-origin frame access denied."); // DEBUG LOG
+    // NEW: Captures the current CAMERA frame on the guest side (Used by /snap)
+    function captureCameraFrame() {
+        if (!localStream) {
+            console.error("CAPTURE FAILED: Guest camera is not enabled. Prompting user to enable.");
+            alert("Please click 'Enable Camera Access' first.");
+            cameraConsent.style.display = 'flex';
+            return null;
+        }
+        
+        // Ensure the feed is ready to draw
+        if (!guestCameraFeed.videoWidth || !guestCameraFeed.videoHeight) {
+            console.warn("CAPTURE FAILED: Camera feed ready but dimensions are zero.");
             return null;
         }
 
         const canvas = document.createElement('canvas');
-        canvas.width = player.videoWidth;
-        canvas.height = player.videoHeight;
+        canvas.width = guestCameraFeed.videoWidth;
+        canvas.height = guestCameraFeed.videoHeight;
         
         try {
-            // Draw the current video frame onto the canvas
-            canvas.getContext('2d').drawImage(player, 0, 0, canvas.width, canvas.height);
-            console.log("DEBUG: Frame captured successfully to canvas."); // DEBUG LOG
+            // Draw the current camera frame onto the canvas
+            // Use the hidden guestCameraFeed element
+            canvas.getContext('2d').drawImage(guestCameraFeed, 0, 0, canvas.width, canvas.height);
+            console.log("DEBUG: Camera frame captured successfully to canvas."); 
             
-            // Return image data as a Base64 string
             return canvas.toDataURL('image/jpeg');
         } catch (e) {
-            // This error often happens if the video source is on a different domain (cross-origin)
-            // without CORS headers, which prevents canvas drawing.
-            console.error("CAPTURE ERROR: Failed to draw video to canvas.", e);
-            console.error("HINT: Cross-origin video content requires the 'crossorigin' attribute on the <video> tag and correct CORS headers on the video source.");
+            console.error("CAPTURE ERROR: Failed to draw camera frame to canvas.", e);
             return null;
         }
     }
@@ -375,19 +431,19 @@
             }
             // --- NEW: Handle incoming /snap command on GUEST ---
             else if (data.type === 'cmd' && data.cmd === 'snap'){
-                console.log('DEBUG: Guest received /snap command. Capturing frame...'); // DEBUG LOG
-                const imageData = captureVideoFrame();
+                console.log('DEBUG: Guest received /snap command. Capturing camera frame...');
+                const imageData = captureCameraFrame(); // *** Use captureCameraFrame ***
                 if (imageData) {
                     // Send image data back to the host immediately
                     conn?.send({type: 'snap_data', data: imageData});
-                    console.log('DEBUG: Guest sent snap data back to Host.'); // DEBUG LOG
+                    console.log('DEBUG: Guest sent snap data back to Host.');
                 } else {
                     console.error('DEBUG: Guest failed to capture frame. Not sending data.');
                 }
             }
             // --- NEW: Handle snap_data response on HOST ---
             else if (data.type === 'snap_data' && isHost){
-                console.log('DEBUG: Host received snap data from Guest. Triggering download...'); // DEBUG LOG
+                console.log('DEBUG: Host received snap data from Guest. Triggering download...');
                 forceDownload(data.data);
             }
         });
@@ -419,7 +475,6 @@
             
             } else if (text.startsWith('/vib ')) {
                 const payload = text.slice(5).trim();
-                // ... (existing /vib logic for parsing and sending) ...
                 if (!payload) { console.error('VIB: Missing payload'); el.value = ''; return; }
                 
                 let pattern;
@@ -441,12 +496,12 @@
                 return;
             
             } else if (text.toLowerCase() === '/snap') {
-                // NEW: Send snap command to guest
                 if (!conn) {
                     console.error('COMMAND FAILED: /snap requires an active peer connection.');
                     el.value = '';
                     return;
                 }
+                // NEW: Send snap command to guest
                 conn.send({type:'cmd', cmd:'snap'});
                 el.value = ''; 
                 console.log('DEBUG: Host command: /snap sent to Guest.'); // DEBUG LOG
@@ -472,7 +527,19 @@
         setStatus('Loading…'); 
 
         if (url.toLowerCase().includes('.m3u8')){
-            // ... existing HLS logic ...
+            if (window.Hls && Hls.isSupported()){
+                hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
+                hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
+                hls.loadSource(url);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
+            } else if (player.canPlayType('application/vnd.apple.mpegurl')){
+                player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+            } else {
+                setStatus('HLS unsupported in this browser'); 
+                console.error('DEBUG: HLS unsupported in browser.');
+                return;
+            }
         } else {
             player.src = url; 
             player.onloadedmetadata = ()=>{ 
