@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>🎬 Watch Together — Fit/Fill + YouTube + Cam + Sync</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    :root{
+      --bg:#0c0d0f; --panel:#14171b; --border:#232834;
+      --text:#e8eef3; --muted:#97a3ae; --accent:#00e1ff;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --kbd: 0px;            /* virtual keyboard height */
+      --composer-h: 56px;    /* measured at runtime */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;background:var(--bg);color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      line-height:1.4;overflow:hidden;
+      padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+      overscroll-behavior:contain;
+    }
+    .hidden{display:none!important}
+
+    .btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0f1116;color:var(--text);font-weight:600;font-size:14px;cursor:pointer}
+    .btn-primary{background:var(--accent);color:#001218;border-color:transparent}
+    .btn-sm{padding:10px 12px;min-width:96px}
+    input[type=text]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0f1116;color:#e8eef3;font-size:14px}
+    input::placeholder{color:var(--muted)}
+
+    .connectScreen{height:100dvh;width:100vw;display:flex;align-items:center;justify-content:center;padding:16px}
+    .connect{width:min(480px,92vw);background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+    .title{font-weight:800;color:var(--accent);text-align:center}
+    .sub{color:var(--muted);font-size:13px;text-align:center}
+    .row{display:flex;gap:8px;align-items:center}
+    .row input{flex:1}
+
+    .session{height:100dvh;width:100vw;display:grid;gap:0;grid-template-columns:1fr 1fr;grid-template-rows:1fr;position:fixed;inset:0}
+    @media (max-width:680px){ .session{grid-template-columns:1fr;grid-template-rows:1fr 1fr} }
+    .left,.right{min-width:0;min-height:0}
+    .left{position:relative;background:#000}
+
+    .videoWrap{position:absolute;inset:0;background:#000;overflow:hidden;display:block;width:100%;height:100%}
+
+    /* HTML5/HLS */
+    #player{position:absolute;inset:0;width:100%;height:100%;background:#000}
+    .left.mode-fill #player{object-fit:cover}
+    .left.mode-fit  #player{object-fit:contain}
+
+    /* YouTube container with JS-driven sizing (Fit/Fill) */
+    .ytBox{position:absolute;inset:0;background:#000}
+    .ytInner{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+      width:100%;height:auto;aspect-ratio:16/9;max-width:100%;max-height:100%;background:#000
+    }
+    .ytInner iframe{width:100%;height:100%;display:block;background:#000;border:0}
+
+    /* Tap-to-play overlay for autoplay policies */
+    .tapOverlay{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.55));
+      z-index:8;
+    }
+    .tapOverlay .tapBtn{
+      padding:12px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.18);
+      background:#00e1ff;color:#00212a;font-weight:800;font-size:16px;
+    }
+
+    .badges{position:absolute;top:8px;left:8px;display:flex;gap:6px;z-index:5;user-select:none;pointer-events:none}
+    .badge{background:rgba(0,0,0,.45);color:#eaf2f7;border:1px solid rgba(255,255,255,.12);padding:4px 8px;border-radius:999px;font-size:12px;backdrop-filter:saturate(120%) blur(6px)}
+    .chip{pointer-events:auto;cursor:pointer;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.55);color:#eaf2f7}
+
+    .right{display:flex;flex-direction:column;background:var(--panel)}
+    .chat{flex:1;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border)}
+    #messages{
+      flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:12px;background:#0f1116;
+      display:flex;flex-direction:column;gap:8px;word-break:break-word;overflow-wrap:anywhere;white-space:pre-wrap;
+      position:absolute;top:0;left:0;right:0;bottom:calc(var(--composer-h) + var(--kbd))
+    }
+    .line{display:flex;width:100%}
+    .from-me{justify-content:flex-end}
+    .from-peer{justify-content:flex-start}
+    .from-sys{justify-content:center}
+    .bubble{max-width:88%;padding:10px 12px;border-radius:14px;border:1px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.25);font-size:14px}
+    .bubble.me{background:rgba(0,212,179,.15);border-color:rgba(0,212,179,.35);color:#d9fff7;border-top-right-radius:6px}
+    .bubble.peer{background:rgba(255,114,210,.14);border-color:rgba(255,114,210,.35);color:#ffe6f6;border-top-left-radius:6px}
+    .bubble.sys{background:transparent;border-color:transparent;color:var(--muted);font-size:12px;padding:6px 8px;box-shadow:none}
+
+    .composer{display:flex;gap:8px;padding:8px;border-top:1px solid var(--border);background:var(--panel);position:absolute;left:0;right:0;bottom:var(--kbd)}
+    .composer input{flex:1}
+    .composer button{padding:10px 12px;border-radius:10px;border:1px solid transparent;background:var(--accent);color:#001218;font-weight:700}
+    .kbd-open #messages{scroll-behavior:auto}
+
+    /* Cam overlay */
+    .peerVideoBox{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000;z-index:6}
+    .peerVideoBox video{max-width:100%;max-height:100%;border:2px solid var(--accent);border-radius:12px}
+    .selfPip{position:absolute;bottom:10px;right:10px;width:200px;z-index:7;border:2px solid rgba(255,255,255,.25);border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+  </style>
+
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+
+<!-- CONNECT -->
+<section id="connectScreen" class="connectScreen">
+  <div class="connect">
+    <div class="title">🎬 Watch Together</div>
+    <div class="sub">Desktop: Left video / Right chat (50/50). Mobile: Top/Bottom (50/50).</div>
+
+    <button id="createBtn" class="btn btn-primary">Create Room (Host)</button>
+
+    <div class="row">
+      <input id="roomId" type="text" placeholder="Room ID" autofocus />
+      <button id="joinBtn" class="btn btn-primary btn-sm">Join</button>
+    </div>
+
+    <div id="connectLog" class="sub"></div>
+  </div>
+</section>
+
+<!-- SESSION -->
+<section id="sessionScreen" class="session hidden">
+  <div class="left mode-fit" id="leftPane">
+    <div class="videoWrap" id="videoWrap">
+      <div class="badges">
+        <span id="roleBadge" class="badge">Not connected</span>
+        <span id="statusBadge" class="badge">Idle</span>
+        <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fit</button>
+      </div>
+      <video id="player" playsinline muted crossorigin="anonymous"></video>
+      <!-- tap overlay will be injected here when needed -->
+    </div>
+  </div>
+
+  <div class="right" id="rightPane">
+    <div class="chat">
+      <div id="messages"></div>
+      <div class="composer">
+        <input id="msgInput" type="text" placeholder="Message… (Host: /load, /yt, /vib • Both: /cam)" />
+        <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* ===== refs ===== */
+const $ = id => document.getElementById(id);
+const connectScreen = $('connectScreen');
+const sessionScreen = $('sessionScreen');
+const roleBadge = $('roleBadge');
+const statusBadge = $('statusBadge');
+const player = $('player');
+const messages = $('messages');
+const leftPane = $('leftPane');
+const rightPane = $('rightPane');
+const fitToggle = $('fitToggle');
+const videoWrap = $('videoWrap');
+
+/* ===== state ===== */
+let peer, conn, isHost=false;
+let connOpen=false;
+let sendQueue=[];                // <-- offline queue
+let hls=null, videoLoaded=false, fitMode='fit';
+let ytPlayer=null, usingYT=false;
+let camStream=null, camOn=false, remoteVideoEl=null, selfVideoEl=null;
+
+/* ===== utilities ===== */
+function addBubble(html, who){
+  const line=document.createElement('div'); line.className='line '+(who==='me'?'from-me':who==='peer'?'from-peer':'from-sys');
+  const b=document.createElement('div'); b.className='bubble '+(who==='me'?'me':who==='peer'?'peer':'sys'); b.innerHTML=html;
+  line.appendChild(b); messages.appendChild(line); messages.scrollTop=messages.scrollHeight;
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':m==='"'?'&quot;':'&#39;' }[m])) }
+function setStatus(t){ statusBadge.textContent=t; }
+
+/* ===== reliable sender with queue ===== */
+function flushQueue(){
+  if(!conn || !conn.open) return;
+  while(sendQueue.length){ try{ conn.send(sendQueue.shift()); }catch{ break; } }
+}
+function sendData(obj){
+  if(conn && conn.open){ conn.send(obj); }
+  else { sendQueue.push(obj); }
+}
+
+/* ===== Fit/Fill ===== */
+function setFitMode(mode){
+  fitMode=mode;
+  leftPane.classList.toggle('mode-fit',  mode==='fit');
+  leftPane.classList.toggle('mode-fill', mode==='fill');
+  fitToggle.textContent = mode==='fit' ? 'Fit' : 'Fill';
+  fitToggle.title = mode==='fit' ? 'No crop (bars may appear)' : 'Fill (may crop)';
+  layoutYT();
+}
+function pickDefaultMode(){ setFitMode(window.matchMedia('(max-width:680px)').matches ? 'fit' : 'fill'); }
+fitToggle.addEventListener('click', ()=> setFitMode(fitMode==='fit'?'fill':'fit'));
+addEventListener('resize', layoutYT);
+addEventListener('orientationchange', layoutYT);
+
+/* ===== connect ===== */
+function showConnect(msg){ $('connectLog').textContent = msg||''; }
+
+$('createBtn').onclick=()=>{
+  isHost=true;
+  peer=new Peer();
+  peer.on('open', id=> showConnect(`Room ID: ${id}`));
+  peer.on('connection', c=>{
+    conn=c;
+    conn.on('open', ()=>{ connOpen=true; flushQueue(); wireConnection(); toSession('host'); sendSnapshotSoon(); });
+  });
+};
+
+$('joinBtn').onclick=tryJoin;
+$('roomId').addEventListener('keydown', e=>{ if(e.key==='Enter') tryJoin(); });
+
+function tryJoin(){
+  const id=$('roomId').value.trim();
+  if(!id){ showConnect('Enter a room ID.'); $('roomId').focus(); return; }
+  isHost=false;
+  peer=new Peer();
+  peer.on('open', ()=>{
+    conn=peer.connect(id);
+    conn.on('open', ()=>{ connOpen=true; flushQueue(); wireConnection(); toSession('guest'); });
+  });
+}
+
+function toSession(role){
+  connectScreen.classList.add('hidden');
+  sessionScreen.classList.remove('hidden');
+  sessionScreen.classList.toggle('role-host', role==='host');
+  sessionScreen.classList.toggle('role-guest', role!=='host');
+  roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
+  if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
+  if (!fitMode) pickDefaultMode();
+}
+
+/* ===== vibration ===== */
+function applyVibration(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+
+/* ===== camera ===== */
+function ensurePeerVideoBox(){
+  let box=document.querySelector('.peerVideoBox');
+  if(!box){ box=document.createElement('div'); box.className='peerVideoBox'; videoWrap.appendChild(box); }
+  return box;
+}
+function showRemoteStream(stream){
+  const box=ensurePeerVideoBox();
+  if(!remoteVideoEl){ remoteVideoEl=document.createElement('video'); remoteVideoEl.autoplay=true; remoteVideoEl.playsInline=true; box.appendChild(remoteVideoEl); }
+  remoteVideoEl.srcObject=stream;
+}
+function hidePeerVideo(){ const box=document.querySelector('.peerVideoBox'); if(box) box.remove(); remoteVideoEl=null; }
+function mountSelfPreview(stream){
+  if(!selfVideoEl){ selfVideoEl=document.createElement('video'); selfVideoEl.autoplay=true; selfVideoEl.muted=true; selfVideoEl.playsInline=true; selfVideoEl.className='selfPip'; videoWrap.appendChild(selfVideoEl); }
+  selfVideoEl.srcObject=stream;
+}
+function unmountSelfPreview(){ if(selfVideoEl){ selfVideoEl.srcObject=null; selfVideoEl.remove(); selfVideoEl=null; } }
+async function startCam(){
+  if(camOn) return;
+  try{
+    camStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    camOn=true; mountSelfPreview(camStream);
+    if(conn){ const call=peer.call(conn.peer, camStream); call.on('stream', s=>showRemoteStream(s)); call.on('close', hidePeerVideo); }
+  }catch(e){ addBubble('<i>Camera access denied.</i>','sys'); }
+}
+function stopCam(){ if(!camOn) return; camStream?.getTracks().forEach(t=>t.stop()); camStream=null; camOn=false; unmountSelfPreview(); hidePeerVideo(); }
+function toggleCam(){ camOn?stopCam():startCam(); }
+
+/* ===== peer wiring ===== */
+function wireConnection(){
+  conn.on('data', data=>{
+    if(data.type==='chat') addBubble(`<b>Peer:</b> ${escapeHtml(data.text)}`,'peer');
+    else if(data.type==='cmd' && data.cmd==='load') loadMedia(data.url,false);
+    else if(data.type==='sync') applySync(data);
+    else if(data.type==='vibrate') applyVibration(data.pattern);
+    else if(data.type==='yt') handleYT(data);
+    else if(data.type==='state') applyStateSnapshot(data.payload);
+  });
+  conn.on('close', ()=> location.reload());
+
+  // calls (camera)
+  peer.on('call', call=>{
+    call.answer(camStream || undefined);
+    call.on('stream', s=>showRemoteStream(s));
+    call.on('close', hidePeerVideo);
+  });
+}
+
+/* ===== chat + commands ===== */
+$('sendBtn').onclick=sendMsg;
+$('msgInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendMsg(); });
+const secToMs=v=>Math.round(parseFloat(v)*1000);
+
+function sendMsg(){
+  const el=$('msgInput'), text=el.value.trim(); if(!text) return;
+
+  // Host commands
+  if(isHost && text.startsWith('/load ')){ const url=text.slice(6).trim(); if(url) loadMedia(url,true); el.value=''; return; }
+  if(isHost && text.startsWith('/vib ')){ const p=text.slice(5).trim(); let pattern=p.includes(',')?p.split(',').map(secToMs):secToMs(p); applyVibration(pattern); sendData({type:'vibrate',pattern}); el.value=''; return; }
+  if(isHost && text.startsWith('/yt ')){ const url=text.slice(4).trim(); const vid=extractYT(url); if(vid) loadYouTube(vid,true); el.value=''; return; }
+
+  // Both: /cam
+  if(text==='/cam'){ toggleCam(); el.value=''; return; }
+
+  // Regular chat (show immediately, send queued if needed)
+  addBubble(`<b>You:</b> ${escapeHtml(text)}`,'me');
+  sendData({type:'chat', text});
+  el.value='';
+}
+
+/* ===== media (HTML5/HLS) ===== */
+function cleanup(){
+  // kill yt
+  if(ytPlayer && ytPlayer.destroy){ try{ ytPlayer.destroy(); }catch{} }
+  ytPlayer=null; usingYT=false;
+  // kill hls
+  if(hls){ try{ hls.destroy(); }catch{} } hls=null;
+  // reset video
+  player.pause(); player.removeAttribute('src'); player.load();
+  videoLoaded=false;
+  // remove yt box
+  const y=videoWrap.querySelector('.ytBox'); if(y) y.remove();
+  // ensure html5 exists
+  if(!videoWrap.querySelector('#player')){ const v=document.createElement('video'); v.id='player'; v.setAttribute('playsinline',''); v.setAttribute('muted',''); v.muted=true; v.setAttribute('crossorigin','anonymous'); v.style.position='absolute'; v.style.inset='0'; v.style.width='100%'; v.style.height='100%'; videoWrap.appendChild(v); }
+}
+
+function loadMedia(url,broadcast){
+  cleanup(); setStatus('Loading…');
+  const lower=url.toLowerCase();
+
+  if(lower.includes('.m3u8')){
+    if(window.Hls && Hls.isSupported()){
+      hls=new Hls({ backBufferLength:600, liveSyncDuration:6, liveMaxLatencyDuration:300 });
+      hls.loadSource(url); hls.attachMedia(player);
+      hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded=true; setStatus('Ready'); safePlayHTML5(); if(isHost) sendSnapshotSoon(); });
+    }else if(player.canPlayType('application/vnd.apple.mpegurl')){
+      player.src=url; player.onloadedmetadata=()=>{ videoLoaded=true; setStatus('Ready'); safePlayHTML5(); if(isHost) sendSnapshotSoon(); };
+    }else{
+      setStatus('HLS unsupported'); return;
+    }
+  }else{
+    player.src=url; player.onloadedmetadata=()=>{ videoLoaded=true; setStatus('Ready'); safePlayHTML5(); if(isHost) sendSnapshotSoon(); };
+  }
+
+  if(broadcast) sendData({type:'cmd',cmd:'load',url});
+}
+
+/* ===== safe autoplay for HTML5 ===== */
+function safePlayHTML5(){
+  player.muted = true; // required on iOS/Android
+  const tryPlay=()=>player.play().catch(()=>showTapOverlay(()=>{ player.muted=false; player.play().catch(()=>{}); hideTapOverlay(); }));
+  if(document.visibilityState==='visible') tryPlay(); else document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') tryPlay(); }, {once:true});
+}
+
+/* ===== sync (HTML5) ===== */
+player.addEventListener('play',  ()=>{ if(isHost && videoLoaded && !usingYT) sendData({type:'sync',action:'play', time:player.currentTime}); });
+player.addEventListener('pause', ()=>{ if(isHost && videoLoaded && !usingYT) sendData({type:'sync',action:'pause',time:player.currentTime}); });
+let seekTimer;
+player.addEventListener('seeked',()=>{ if(!isHost || !videoLoaded || usingYT) return; clearTimeout(seekTimer); seekTimer=setTimeout(()=>sendData({type:'sync',action:'seek',time:player.currentTime}),90); });
+
+function applySync(msg){
+  if(!videoLoaded || usingYT) return;
+  const d=Math.abs(player.currentTime - msg.time);
+  if(d>0.4) player.currentTime=msg.time;
+  if(msg.action==='play') player.play().catch(()=>{});
+  if(msg.action==='pause') player.pause();
+}
+
+/* ===== YouTube ===== */
+function extractYT(url){ const m=url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/); return m?m[1]:null; }
+function layoutYT(){
+  const inner=videoWrap.querySelector('.ytInner'); if(!inner) return;
+  const cw=videoWrap.clientWidth||1, ch=videoWrap.clientHeight||1, cAR=cw/ch, vAR=16/9;
+  const fill = leftPane.classList.contains('mode-fill');
+  if(fill){ // cover
+    if(cAR>vAR){ inner.style.width='100%'; inner.style.height=(cw/vAR)+'px'; }
+    else       { inner.style.height='100%'; inner.style.width=(ch*vAR)+'px'; }
+  }else{     // fit
+    if(cAR>vAR){ inner.style.height='100%'; inner.style.width=(ch*vAR)+'px'; }
+    else       { inner.style.width='100%'; inner.style.height=(cw/vAR)+'px'; }
+  }
+}
+function mountYT(vid){
+  const html5=videoWrap.querySelector('#player'); if(html5) html5.remove();
+  let box=videoWrap.querySelector('.ytBox');
+  if(!box){ box=document.createElement('div'); box.className='ytBox'; box.innerHTML='<div class="ytInner"><div id="ytPlayer"></div></div>'; videoWrap.appendChild(box); }
+  usingYT=true; setStatus('Loading YouTube…'); layoutYT();
+
+  function create(){
+    ytPlayer=new YT.Player('ytPlayer',{
+      videoId:vid, playerVars:{playsinline:1}, events:{
+        onReady: ()=>{ setStatus('Ready'); safePlayYT(); sendSnapshotSoon(); },
+        onStateChange: onYTStateChange
+      }
+    });
+  }
+  if(window.YT && YT.Player) create();
+  else { let tries=40; const t=setInterval(()=>{ if(window.YT && YT.Player){ clearInterval(t); create(); } else if(--tries<=0){ clearInterval(t); setStatus('YouTube API failed'); } },150); }
+}
+function loadYouTube(vid,broadcast){ cleanup(); mountYT(vid); if(broadcast) sendData({type:'yt',vid}); }
+
+function onYTStateChange(e){
+  if(!isHost || !connOpen || !ytPlayer) return;
+  const t=ytPlayer.getCurrentTime();
+  if(e.data===YT.PlayerState.PLAYING) sendData({type:'yt',action:'play',time:t});
+  else if(e.data===YT.PlayerState.PAUSED) sendData({type:'yt',action:'pause',time:t});
+}
+function handleYT(d){
+  if(d.vid && !ytPlayer){ mountYT(d.vid); return; }
+  if(!ytPlayer) return;
+  layoutYT();
+  if(typeof d.time==='number'){ const diff=Math.abs(ytPlayer.getCurrentTime()-d.time); if(diff>0.4) ytPlayer.seekTo(d.time,true); }
+  if(d.action==='play') ytPlayer.playVideo();
+  if(d.action==='pause') ytPlayer.pauseVideo();
+}
+
+/* ===== safe autoplay for YT ===== */
+function safePlayYT(){
+  if(!ytPlayer) return;
+  // try to play, else show tap overlay
+  const tryPlay=()=>{
+    ytPlayer.playVideo();
+    setTimeout(()=>{
+      const st = ytPlayer.getPlayerState ? ytPlayer.getPlayerState() : -1;
+      if(st!==YT.PlayerState.PLAYING) showTapOverlay(()=>{ ytPlayer.playVideo(); hideTapOverlay(); });
+    }, 200);
+  };
+  if(document.visibilityState==='visible') tryPlay();
+  else document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') tryPlay(); }, {once:true});
+}
+
+/* ===== snapshot sync ===== */
+function currentState(){
+  if(usingYT && ytPlayer){
+    const playing = ytPlayer.getPlayerState && ytPlayer.getPlayerState()===YT.PlayerState.PLAYING;
+    return {mode:'yt', vid: ytPlayer.getVideoData()?.video_id, time: ytPlayer.getCurrentTime(), playing};
+  }
+  if(videoLoaded){
+    return {mode:'html5', src:(player.currentSrc||player.src||''), time:player.currentTime, playing:!player.paused};
+  }
+  return {mode:'none'};
+}
+function sendSnapshot(){ if(isHost) sendData({type:'state', payload: currentState()}); }
+function sendSnapshotSoon(){ setTimeout(sendSnapshot,200); }
+function applyStateSnapshot(s){
+  if(!s || s.mode==='none') return;
+  if(s.mode==='html5'){
+    if((player.currentSrc||player.src||'')!==s.src){
+      loadMedia(s.src,false);
+      const align=()=>{ player.currentTime=s.time||0; s.playing?player.play().catch(()=>{}):player.pause(); player.removeEventListener('loadedmetadata',align); };
+      player.addEventListener('loadedmetadata',align);
+    }else{
+      player.currentTime=s.time||0; s.playing?player.play().catch(()=>{}):player.pause();
+    }
+  }else if(s.mode==='yt'){
+    if(!usingYT || !ytPlayer){ mountYT(s.vid); }
+    let tries=40; const t=setInterval(()=>{ if(ytPlayer && ytPlayer.getDuration){ clearInterval(t);
+      if(typeof s.time==='number'){ const diff=Math.abs(ytPlayer.getCurrentTime()-s.time); if(diff>0.4) ytPlayer.seekTo(s.time,true); }
+      if(s.playing) ytPlayer.playVideo(); else ytPlayer.pauseVideo();
+    } else if(--tries<=0){ clearInterval(t);} },100);
+  }
+}
+
+/* ===== tap-to-play overlay ===== */
+function showTapOverlay(onTap){
+  if(document.querySelector('.tapOverlay')) return;
+  const o=document.createElement('div'); o.className='tapOverlay';
+  const b=document.createElement('button'); b.className='tapBtn'; b.textContent='Tap to Play';
+  b.onclick=onTap; o.appendChild(b); videoWrap.appendChild(o);
+}
+function hideTapOverlay(){ const o=document.querySelector('.tapOverlay'); if(o) o.remove(); }
+
+/* ===== keyboard-aware chat ===== */
+(function(){
+  const vv=window.visualViewport, composer=document.querySelector('.composer');
+  function setVar(n,v){ document.documentElement.style.setProperty(n,v); }
+  function measure(){ if(composer) setVar('--composer-h', composer.offsetHeight+'px'); }
+  function update(){
+    const kb=vv?Math.max(0,(innerHeight-vv.height-vv.offsetTop)):0;
+    const open=kb>120; setVar('--kbd',(open?kb:0)+'px'); document.body.classList.toggle('kbd-open',open); measure();
+  }
+  addEventListener('load',update,{once:true}); addEventListener('resize',update); addEventListener('orientationchange',update);
+  if(vv){ vv.addEventListener('resize',update); vv.addEventListener('scroll',update); }
+  const inp=$('msgInput'); if(inp){ inp.addEventListener('focus',()=>setTimeout(update,0)); inp.addEventListener('blur',()=>setTimeout(update,0)); }
+})();
+
+/* ===== init ===== */
+addEventListener('load', pickDefaultMode);
+</script>
+</body>
+</html>
