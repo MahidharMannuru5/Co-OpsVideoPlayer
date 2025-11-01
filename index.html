@@ -14,23 +14,20 @@
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --safe-left: env(safe-area-inset-left, 0px);
 
-            /* ADDED: virtual keyboard support */
-            --kbd: 0px;           /* current virtual keyboard height */
-            --composer-h: 56px;   /* updated by JS after mount */
+            --kbd: 0px;
+            --composer-h: 56px;
         }
         *{box-sizing:border-box}
         html,body{height:100%}
         body{
             margin:0; background:var(--bg); color:var(--text);
             font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-            line-height:1.4; overflow:hidden; /* no page scroll */
+            line-height:1.4; overflow:hidden;
             padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
-            /* ADDED: avoid browser overscroll shifting the layout */
             overscroll-behavior:contain;
         }
         .hidden{display:none !important}
 
-        /* Buttons/Inputs (compact) */
         .btn{
             display:inline-flex; align-items:center; justify-content:center;
             padding:10px 12px; border-radius:10px; border:1px solid var(--border);
@@ -45,7 +42,6 @@
         }
         input::placeholder{color:var(--muted)}
 
-        /* CONNECT (use 100dvh so mobile shows full UI) */
         .connectScreen{
             height:100dvh; width:100vw; display:flex; align-items:center; justify-content:center; padding:16px;
         }
@@ -59,34 +55,46 @@
         .row{display:flex; gap:8px; align-items:center}
         .row input{flex:1}
 
-        /* SESSION: fullscreen split (100dvh for mobile browser chrome) */
         .session{
             height:100dvh; width:100vw; display:grid; gap:0;
-            grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; /* desktop: side-by-side */
-
-            /* ADDED: keep layout fixed so video doesn't shift when keyboard opens */
+            grid-template-columns: 1fr 1fr; grid-template-rows: 1fr;
             position:fixed; inset:0;
         }
+        /* SOLO mode: expand video to full width when chat is hidden (e.g., cam-on) */
+        .session.solo{ grid-template-columns: 1fr; }
+
         @media (max-width: 680px){
-            .session{ grid-template-columns:1fr; grid-template-rows: 1fr 1fr; } /* mobile: top/bottom */
+            .session{ grid-template-columns:1fr; grid-template-rows: 1fr 1fr; }
+            .session.solo{ grid-template-rows: 1fr; }
         }
+
         .left,.right{min-width:0; min-height:0}
-
-        /* VIDEO (fills its half completely) */
         .left{position:relative; background:#000}
-        .videoWrap{position:absolute; inset:0; background:#000; overflow:hidden}
-        video{position:absolute; inset:0; width:100%; height:100%; background:#000}
-        /* Fit/Fill modes toggled on .left */
-        .left.mode-fill video { object-fit:cover; }   /* no gaps, can crop */
-        .left.mode-fit  video { object-fit:contain; } /* no crop, may show bars */
 
-        /* Host vs guest interaction */
+        .videoWrap{
+            position:absolute; inset:0; background:#000; overflow:hidden;
+            /* help some browsers force reflow correctly */
+            display:block; width:100%; height:100%;
+        }
+
+        /* HTML5/HLS video defaults to fill space; object-fit controlled by mode-fit/mode-fill */
+        video#player{position:absolute; inset:0; width:100%; height:100%; background:#000}
+
+        /* Fit/Fill modes */
+        .left.mode-fill video#player { object-fit:cover; }
+        .left.mode-fit  video#player { object-fit:contain; }
+
+        /* YouTube iframe should also fully cover .videoWrap */
+        .ytBox, .ytBox iframe{
+            position:absolute; inset:0; width:100%; height:100%;
+            display:block; background:#000;
+        }
+
         .role-host video{pointer-events:auto}
         .role-guest video{pointer-events:none}
 
-        /* badges + fit/fill toggle */
         .badges{
-            position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
+            position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:5;
             user-select:none; pointer-events:none;
         }
         .badge{
@@ -100,14 +108,15 @@
             background:rgba(0,0,0,.55); color:#eaf2f7;
         }
 
-        /* CHAT (right): vertical scroll only + left/right bubbles */
         .right{display:flex; flex-direction:column; background:var(--panel)}
         .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border)}
 
         #messages{
             flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; background:#0f1116;
             display:flex; flex-direction:column; gap:8px;
-            word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap; /* wrap long lines; no horizontal scroll */
+            word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap;
+            position:absolute; top:0; left:0; right:0;
+            bottom: calc(var(--composer-h) + var(--kbd));
         }
         .line{display:flex; width:100%}
         .from-me{justify-content:flex-end}
@@ -116,10 +125,8 @@
 
         .bubble{
             max-width:88%;
-            padding:10px 12px;
-            border-radius:14px;
-            border:1px solid transparent;
-            box-shadow:0 1px 2px rgba(0,0,0,.25);
+            padding:10px 12px; border-radius:14px;
+            border:1px solid transparent; box-shadow:0 1px 2px rgba(0,0,0,.25);
             font-size:14px;
         }
         .bubble.me{
@@ -136,7 +143,8 @@
         }
 
         .composer{
-            display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)
+            display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
+            position:absolute; left:0; right:0; bottom: var(--kbd);
         }
         .composer input{flex:1}
         .composer button{
@@ -144,44 +152,24 @@
             background:var(--accent); color:#001218; font-weight:700;
         }
 
-        /* ====== ADDED (keyboard-aware chat without moving the video) ====== */
-        /* Keep chat in a positioned context */
-        .right .chat{ position:relative; }
-
-        /* Make messages occupy space above the composer + keyboard */
-        #messages{
-            position:absolute; top:0; left:0; right:0;
-            bottom: calc(var(--composer-h) + var(--kbd));
-        }
-
-        /* Lift composer exactly to the keyboard top (0 on desktop) */
-        .composer{
-            position:absolute; left:0; right:0; bottom: var(--kbd);
-        }
-
-        /* Optional: avoid smooth scroll jumps when keyboard toggles */
         .kbd-open #messages{ scroll-behavior:auto; }
-        /* ====== /ADDED ====== */
 
-        /* ====== ADDED: in-call camera layout ====== */
-        .cam-on .chat{ display:none; } /* hide chat area when the local user turns camera on */
+        /* Camera overlay */
         .peerVideoBox{
             position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-            background:#000; z-index:3; /* over player */
+            background:#000; z-index:4;
         }
         .peerVideoBox video{
             max-width:100%; max-height:100%; border:2px solid var(--accent); border-radius:12px;
         }
         .selfPip{
-            position:absolute; bottom:10px; right:10px; width:200px; z-index:4;
+            position:absolute; bottom:10px; right:10px; width:200px; z-index:6;
             border:2px solid rgba(255,255,255,.25); border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,.4);
         }
-        /* ====== /ADDED ====== */
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <!-- ADDED: YouTube IFrame API for /yt -->
     <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
@@ -202,21 +190,20 @@
     </div>
 </section>
 
-<section id="sessionScreen" class="session hidden">
+<section id="sessionScreen" class="session hidden" id="session">
     <div class="left mode-fill" id="leftPane">
-        <div class="videoWrap">
+        <div class="videoWrap" id="videoWrap">
             <div class="badges">
                 <span id="roleBadge" class="badge">Not connected</span>
                 <span id="statusBadge" class="badge">Idle</span>
                 <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fill</button>
             </div>
-            <!-- HTML5/HLS player remains (unchanged) -->
             <video id="player" playsinline crossorigin="anonymous"></video>
-            <!-- ADDED: YouTube container injected dynamically when /yt is used -->
+            <!-- YouTube container will be mounted dynamically when needed -->
         </div>
     </div>
 
-    <div class="right">
+    <div class="right" id="rightPane">
         <div class="chat">
             <div id="messages"></div>
             <div class="composer">
@@ -237,9 +224,11 @@
     const player = $('player');
     const messages = $('messages');
     const leftPane = $('leftPane');
+    const rightPane = $('rightPane');
     const fitToggle = $('fitToggle');
+    const videoWrap = $('videoWrap');
 
-    // Pull vars injected by Streamlit (fallbacks if opened directly)
+    // If these are injected by a wrapper (e.g., Streamlit), use them; else default
     const ROOM_ID = (window.__WATCH_TOGETHER__ && window.__WATCH_TOGETHER__.ROOM_ID) || '';
     const ROLE = (window.__WATCH_TOGETHER__ && window.__WATCH_TOGETHER__.ROLE) || '';
     const DEFAULT_VIDEO_URL = (window.__WATCH_TOGETHER__ && window.__WATCH_TOGETHER__.DEFAULT_VIDEO_URL) || '';
@@ -249,14 +238,15 @@
     let videoLoaded = false;
     let fitMode = null;
 
-    // ADDED: YouTube + Camera state
+    // YouTube + Camera state
     let ytPlayer = null;
+    let usingYT = false;
     let camStream = null;
     let camOn = false;
     let remoteVideoEl = null;
     let selfVideoEl = null;
 
-    // ===== Fit/Fill Toggle (Existing Functionality) =====
+    // ===== Fit/Fill Toggle =====
     function setFitMode(mode){
         fitMode = mode;
         leftPane.classList.toggle('mode-fit',  mode==='fit');
@@ -271,7 +261,7 @@
     fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
     window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
 
-    // ===== UI helpers (Existing) =====
+    // ===== UI helpers =====
     function showConnect(msg){ $('connectLog').textContent = msg || ''; }
     function toSession(role){
         connectScreen.classList.add('hidden');
@@ -282,56 +272,49 @@
         if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
         if (fitMode==null) pickDefaultMode();
 
-        // If Streamlit passed a default URL, load it as a convenience (host only)
+        // Load default URL (host only) if provided
         if (DEFAULT_VIDEO_URL && role==='host') {
             loadMedia(DEFAULT_VIDEO_URL, true);
         }
     }
-
-    // chat bubble helpers
-    function addBubble(text, who){
+    function log(html, cls){
+        if (cls === 'sys') { console.log("[SYS]", html.replace(/<[^>]*>?/gm, '')); return; }
         const line = document.createElement('div');
-        line.className = 'line ' + (who==='me' ? 'from-me' : who==='peer' ? 'from-peer' : 'from-sys');
+        line.className = 'line ' + (cls==='me' ? 'from-me' : 'from-peer');
         const b = document.createElement('div');
-        b.className = 'bubble ' + (who==='me' ? 'me' : who==='peer' ? 'peer' : 'sys');
-        b.innerHTML = text;
+        b.className = 'bubble ' + (cls==='me' ? 'me' : 'peer');
+        b.innerHTML = html;
         line.appendChild(b);
         messages.appendChild(line);
         messages.scrollTop = messages.scrollHeight;
     }
-    function log(html, cls){
-        if (cls === 'sys') {
-            console.log("[SYS]", html.replace(/<[^>]*>?/gm, ''));
-            return;
-        }
-        addBubble(html, cls==='me' ? 'me' : 'peer');
-    }
     function setStatus(text){ statusBadge.textContent = text; }
     function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':m==='"'?'&quot;':'&#39;' }[m])) }
 
-    // ===== Connect flow (Existing, extended to support Streamlit auto role) =====
+    // ===== Connection flow =====
     $('createBtn').onclick = () => {
         isHost = true;
         peer = new Peer();
         peer.on('open', id => {
             showConnect(`Room ID: ${id}`);
-            console.log(`DEBUG: Room created. ID: ${id}`);
         });
         peer.on('connection', c => {
-            conn = c; wireConnection(); toSession('host');
-            console.log('DEBUG: Peer connection established (Host)');
+            conn = c;
+            wireConnection();
+            toSession('host');
+            // Send a snapshot of current state so guest locks instantly
+            sendSnapshot();
         });
     };
 
     $('joinBtn').onclick = tryJoin;
     $('roomId').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
 
-    // If this page came from Streamlit with role info, auto-trigger
+    // Auto-trigger if ROLE/ROOM_ID provided by wrapper
     window.addEventListener('load', () => {
         if (ROLE === 'Host') $('createBtn').click();
         else if (ROLE === 'Guest' && ROOM_ID) {
-            $('roomId').value = ROOM_ID;
-            $('joinBtn').click();
+            $('roomId').value = ROOM_ID; $('joinBtn').click();
         }
     });
 
@@ -344,20 +327,16 @@
             conn = peer.connect(id);
             conn.on('open', () => {
                 wireConnection(); toSession('guest');
-                console.log(`DEBUG: Joined room successfully (Guest)`);
             });
         });
     }
 
-    // ===== VIBRATION API (Existing) =====
+    // Vibrate
     function applyVibration(pattern) {
-        if (typeof navigator.vibrate === 'function') {
-            console.log(`DEBUG: vibrate: ${pattern}`);
-            navigator.vibrate(pattern);
-        }
+        if (typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
     }
 
-    // ===== NEW: Camera utilities =====
+    // ===== Camera (local toggle) =====
     function ensurePeerVideoBox(){
         let box = document.querySelector('.peerVideoBox');
         if (!box){
@@ -372,12 +351,11 @@
         if (!remoteVideoEl){
             remoteVideoEl = document.createElement('video');
             remoteVideoEl.autoplay = true; remoteVideoEl.playsInline = true;
-            box.innerHTML = ''; // single child
-            box.appendChild(remoteVideoEl);
+            box.innerHTML = ''; box.appendChild(remoteVideoEl);
         }
         remoteVideoEl.srcObject = stream;
     }
-    function hidePeerVideoBox(){
+    function hidePeerVideo(){
         const box = document.querySelector('.peerVideoBox');
         if (box) box.remove();
         remoteVideoEl = null;
@@ -387,35 +365,30 @@
             selfVideoEl = document.createElement('video');
             selfVideoEl.autoplay = true; selfVideoEl.muted = true; selfVideoEl.playsInline = true;
             selfVideoEl.className = 'selfPip';
-            selfVideoEl.style.display = 'block';
             leftPane.appendChild(selfVideoEl);
         }
         selfVideoEl.srcObject = stream;
     }
     function unmountSelfPreview(){
-        if (selfVideoEl){
-            selfVideoEl.srcObject = null;
-            selfVideoEl.remove();
-            selfVideoEl = null;
-        }
+        if (selfVideoEl){ selfVideoEl.srcObject = null; selfVideoEl.remove(); selfVideoEl = null; }
     }
     async function startCam(){
         if (camOn) return;
         try{
             camStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
             camOn = true;
-            document.body.classList.add('cam-on'); // hide chat area for THIS user
+            sessionScreen.classList.add('solo');   // expand video pane when chat is hidden
+            rightPane.classList.add('hidden');     // hide chat area
             mountSelfPreview(camStream);
 
-            // call the peer (after data connection is live)
+            // call peer with our stream (after data conn is live)
             if (conn && conn.peer){
                 const call = peer.call(conn.peer, camStream);
                 call.on('stream', s => showRemoteStream(s));
+                call.on('close', () => hidePeerVideo());
             }
-
         }catch(e){
-            console.warn('Camera denied', e);
-            addBubble(`<i>Camera access was denied.</i>`, 'sys');
+            log(`<i>Camera access denied.</i>`, 'sys');
         }
     }
     function stopCam(){
@@ -423,48 +396,45 @@
         camStream?.getTracks().forEach(t=>t.stop());
         camStream = null;
         camOn = false;
-        document.body.classList.remove('cam-on');
+        sessionScreen.classList.remove('solo');
+        rightPane.classList.remove('hidden');
         unmountSelfPreview();
-        hidePeerVideoBox();
+        hidePeerVideo();
     }
-    function toggleCam(){
-        if (camOn) stopCam(); else startCam();
-    }
+    function toggleCam(){ camOn ? stopCam() : startCam(); }
 
-    // Peer call handler (answer incoming camera streams)
     function wireCalls(){
         peer.on('call', call => {
-            // We answer with no local stream if our cam is off; PeerJS allows that for receiving
             call.answer(camStream || undefined);
             call.on('stream', s => showRemoteStream(s));
-            call.on('close', () => hidePeerVideoBox());
+            call.on('close', () => hidePeerVideo());
         });
     }
 
-    // ===== wireConnection (Existing, extended for /yt and /cam sync events) =====
+    // ===== Peer data wiring (chat/cmd/sync/yt) =====
     function wireConnection(){
         wireCalls();
 
         conn.on('data', data => {
             if (data.type === 'chat'){
                 log(`<b>Peer:</b> ${escapeHtml(data.text)}`, 'peer');
-            } else if (data.type === 'cmd' && data.cmd === 'load'){
-                loadMedia(data.url, false);
+            } else if (data.type === 'cmd'){
+                if (data.cmd === 'load') loadMedia(data.url, false);
             } else if (data.type === 'sync'){
                 applySync(data);
             } else if (data.type === 'vibrate'){
                 applyVibration(data.pattern);
             } else if (data.type === 'yt'){
                 handleYT(data);
+            } else if (data.type === 'state'){
+                // Full snapshot from host (source + mode + time + playing)
+                applyStateSnapshot(data.payload);
             }
         });
-        conn.on('close', () => {
-            console.warn('CONNECTION CLOSED: Peer connection was closed. Reloading page.');
-            location.reload();
-        });
+        conn.on('close', () => location.reload());
     }
 
-    // ===== Chat (Existing: /load, /vib) + ADDED: /yt + /cam =====
+    // ===== Chat & Commands =====
     $('sendBtn').onclick = sendMsg;
     $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
 
@@ -474,232 +444,61 @@
         const el = $('msgInput'), text = el.value.trim();
         if (!text) return;
 
-        // --- HOST COMMANDS ---
+        // HOST commands
         if (isHost) {
             if (text.startsWith('/load ')) {
                 const url = text.slice(6).trim();
                 if (url) loadMedia(url, true);
-                el.value = '';
-                return;
+                el.value = ''; return;
             } else if (text.startsWith('/vib ')) {
                 const payload = text.slice(5).trim();
-                if (!payload) { el.value=''; return; }
-                let pattern;
-                if (payload.includes(',')) pattern = payload.split(',').map(sec => secToMs(sec));
-                else pattern = secToMs(payload);
+                if (!payload) { el.value = ''; return; }
+                let pattern = payload.includes(',') ? payload.split(',').map(sec => secToMs(sec)) : secToMs(payload);
                 if (pattern === 0 || (Array.isArray(pattern) && pattern.some(isNaN))) { el.value=''; return; }
                 applyVibration(pattern);
                 conn?.send({type:'vibrate', pattern});
-                el.value = '';
-                return;
+                el.value = ''; return;
             } else if (text.startsWith('/yt ')) {
                 const url = text.slice(4).trim();
                 const vid = extractYT(url);
-                if (vid){
-                    loadYouTube(vid, true); // broadcast true
-                }
-                el.value = '';
-                return;
+                if (vid){ loadYouTube(vid, true); }
+                el.value = ''; return;
             }
         }
 
-        // --- BOTH: /cam toggle ---
-        if (text === '/cam'){
-            toggleCam();
-            el.value = '';
-            return;
-        }
+        // BOTH: /cam
+        if (text === '/cam'){ toggleCam(); el.value = ''; return; }
 
-        // --- REGULAR CHAT MESSAGE ---
+        // Regular chat
         log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
         conn?.send({type:'chat', text});
         el.value = '';
     }
 
-    // ===== Media loading (HTML5 + HLS) (Existing Functionality) =====
+    // ===== Media: HTML5/HLS =====
     function cleanup(){
-        // destroy YouTube if present
+        // Destroy YT if present
         if (ytPlayer && ytPlayer.destroy){ try{ ytPlayer.destroy(); }catch(e){} }
-        ytPlayer = null;
+        ytPlayer = null; usingYT = false;
 
-        // destroy HLS and HTML5
+        // Destroy HLS + HTML5
         if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
         player.pause(); player.removeAttribute('src'); player.load();
         videoLoaded = false;
 
-        // ensure HTML5 <video> is visible again (in case we had YT)
-        ensureHtml5Player();
-    }
-
-    function ensureHtml5Player(){
-        const wrap = document.querySelector('.videoWrap');
-        if (!wrap.querySelector('#player')){
+        // Ensure HTML5 video exists & fills
+        if (!videoWrap.querySelector('#player')){
             const v = document.createElement('video');
             v.id = 'player'; v.setAttribute('playsinline',''); v.setAttribute('crossorigin','anonymous');
-            wrap.appendChild(v);
+            v.style.position = 'absolute'; v.style.inset = '0'; v.style.width='100%'; v.style.height='100%';
+            videoWrap.appendChild(v);
         }
+        // Remove any YT box remnants
+        const yt = videoWrap.querySelector('.ytBox'); if (yt) yt.remove();
     }
 
     function loadMedia(url, broadcast){
         cleanup();
         setStatus('Loading…');
 
-        if (url.toLowerCase().includes('.m3u8')){
-            if (window.Hls && Hls.isSupported()){
-                hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
-                hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
-                hls.loadSource(url);
-                hls.attachMedia(player);
-                hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
-            } else if (player.canPlayType('application/vnd.apple.mpegurl')){
-                player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
-            } else {
-                setStatus('HLS unsupported in this browser');
-                return;
-            }
-        } else {
-            player.src = url;
-            player.onloadedmetadata = ()=>{
-                videoLoaded = true;
-                setStatus('Ready');
-            };
-        }
-
-        if (broadcast){
-            conn?.send({type:'cmd', cmd:'load', url});
-        }
-    }
-
-    // ===== Sync host -> guest (Existing Functionality) =====
-    player.addEventListener('play', () => {
-        if (!isHost || !videoLoaded) return;
-        conn?.send({type:'sync', action:'play', time:player.currentTime});
-    });
-    player.addEventListener('pause', () => {
-        if (!isHost || !videoLoaded) return;
-        conn?.send({type:'sync', action:'pause', time:player.currentTime});
-    });
-    let seekTimer;
-    player.addEventListener('seeked', () => {
-        if (!isHost || !videoLoaded) return;
-        clearTimeout(seekTimer);
-        seekTimer = setTimeout(()=> {
-            conn?.send({type:'sync', action:'seek', time:player.currentTime});
-        }, 80);
-    });
-
-    function applySync(msg){
-        if (!videoLoaded) return;
-        const diff = Math.abs(player.currentTime - msg.time);
-        if (diff > 0.4) player.currentTime = msg.time;
-        if (msg.action === 'play')  player.play().catch(()=>{});
-        if (msg.action === 'pause') player.pause();
-    }
-
-    /* ===== ADDED: keyboard-aware chat (Existing Functionality) ===== */
-    (function setupKeyboardAwareChat(){
-        const vv = window.visualViewport;
-        const composer = document.querySelector('.composer');
-        function setVar(name, val){ document.documentElement.style.setProperty(name, val); }
-        function measureComposer(){
-            if (composer) setVar('--composer-h', composer.offsetHeight + 'px');
-        }
-        function updateKeyboardOffset(){
-            const kb = vv ? Math.max(0, (window.innerHeight - vv.height - vv.offsetTop)) : 0;
-            const isOpen = kb > 120; // threshold to ignore tiny resizes
-            setVar('--kbd', (isOpen ? kb : 0) + 'px');
-            document.body.classList.toggle('kbd-open', isOpen);
-            measureComposer();
-        }
-        window.addEventListener('load', updateKeyboardOffset, { once:true });
-        window.addEventListener('resize', updateKeyboardOffset);
-        window.addEventListener('orientationchange', updateKeyboardOffset);
-        if (vv){
-            vv.addEventListener('resize', updateKeyboardOffset);
-            vv.addEventListener('scroll', updateKeyboardOffset);
-        }
-        const msgInput = document.getElementById('msgInput');
-        if (msgInput){
-            msgInput.addEventListener('focus', () => { setTimeout(updateKeyboardOffset, 0); });
-            msgInput.addEventListener('blur',  () => { setTimeout(updateKeyboardOffset, 0); });
-        }
-    })();
-    /* ===== /ADDED ===== */
-
-    // ====== ADDED: YouTube support (for /yt) ======
-    function extractYT(url){
-        const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
-        return m ? m[1] : null;
-    }
-    function mountYTContainer(){
-        const wrap = document.querySelector('.videoWrap');
-        // Remove HTML5 player element while YT is active (we'll recreate on cleanup)
-        player.remove();
-        if (!wrap.querySelector('#ytPlayer')){
-            const div = document.createElement('div');
-            div.id = 'ytPlayer';
-            div.style.position = 'absolute';
-            div.style.inset = '0';
-            wrap.appendChild(div);
-        }
-    }
-    function loadYouTube(videoId, broadcast){
-        cleanup(); // clears HTML5 and any old YT, then re-add HTML5; we’ll replace with YT
-        // Replace with YT container
-        const wrap = document.querySelector('.videoWrap');
-        const html5 = wrap.querySelector('#player');
-        if (html5) html5.remove();
-        mountYTContainer();
-        setStatus('Loading YouTube…');
-
-        // The IFrame API triggers onYouTubeIframeAPIReady globally if needed.
-        function create(){
-            ytPlayer = new YT.Player('ytPlayer', {
-                videoId,
-                playerVars: { playsinline: 1 },
-                events: {
-                    onReady: ()=> setStatus('Ready'),
-                    onStateChange: onYTStateChange
-                }
-            });
-        }
-        if (window.YT && YT.Player) create();
-        else {
-            // Fallback if API not ready yet
-            let retries = 30;
-            const t = setInterval(()=>{
-                if (window.YT && YT.Player){ clearInterval(t); create(); }
-                else if (--retries <= 0) { clearInterval(t); setStatus('YouTube API failed to load'); }
-            }, 200);
-        }
-
-        if (broadcast) conn?.send({ type:'yt', vid: videoId });
-    }
-    function onYTStateChange(event){
-        if (!isHost || !conn || !ytPlayer) return;
-        const t = ytPlayer.getCurrentTime();
-        if (event.data === YT.PlayerState.PLAYING)
-            conn.send({ type:'yt', action:'play', time:t });
-        else if (event.data === YT.PlayerState.PAUSED)
-            conn.send({ type:'yt', action:'pause', time:t });
-    }
-    function handleYT(data){
-        if (data.vid && !ytPlayer){
-            loadYouTube(data.vid, false);
-            return;
-        }
-        if (!ytPlayer) return;
-        if (typeof data.time === 'number'){
-            const diff = Math.abs(ytPlayer.getCurrentTime() - data.time);
-            if (diff > 0.4) ytPlayer.seekTo(data.time, true);
-        }
-        if (data.action === 'play') ytPlayer.playVideo();
-        if (data.action === 'pause') ytPlayer.pauseVideo();
-    }
-    // ====== /YouTube support ======
-
-    // Init default fit/fill on load (Existing Functionality)
-    window.addEventListener('load', pickDefaultMode);
-</script>
-</body>
-</html>
+        
