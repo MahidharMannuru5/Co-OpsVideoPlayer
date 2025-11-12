@@ -2,31 +2,43 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>PeerJS Minimal — Create/Join Test</title>
+<title>PeerJS ICE Diagnostic</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body{font-family:system-ui,Arial,sans-serif;background:#0c0d0f;color:#e8eef3;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}
-  .card{background:#14171b;border:1px solid #232834;border-radius:14px;padding:16px;width:min(520px,92vw)}
-  .row{display:flex;gap:8px;margin:10px 0}
-  input{flex:1;padding:10px;border-radius:10px;border:1px solid #232834;background:#0f1116;color:#e8eef3}
+  .card{background:#14171b;border:1px solid #232834;border-radius:14px;padding:16px;width:min(680px,92vw)}
+  .row{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
+  input,select{flex:1;min-width:200px;padding:10px;border-radius:10px;border:1px solid #232834;background:#0f1116;color:#e8eef3}
   button{padding:10px 12px;border-radius:10px;border:1px solid #232834;background:#00e1ff;color:#001218;font-weight:700;cursor:pointer}
-  pre{background:#0f1116;border:1px solid #232834;border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto}
+  pre{background:#0f1116;border:1px solid #232834;border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:44vh;overflow:auto}
+  small{color:#97a3ae}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
   <div class="card">
-    <h2>PeerJS Minimal — Create/Join Test</h2>
+    <h2>PeerJS ICE Diagnostic</h2>
     <div class="row">
       <button id="create">Create (Host)</button>
       <input id="room" placeholder="Room ID to join">
       <button id="join">Join (Guest)</button>
     </div>
     <div class="row">
+      <select id="policy">
+        <option value="">iceTransportPolicy (default)</option>
+        <option value="all">all</option>
+        <option value="relay">relay (TURN only)</option>
+      </select>
+      <input id="turnUrls" placeholder="TURN URLs (comma): turns:turn.example.com:5349?transport=tcp,turn:turn.example.com:3478?transport=udp">
+      <input id="turnUser" placeholder="TURN username">
+      <input id="turnPass" placeholder="TURN credential">
+    </div>
+    <div class="row">
       <input id="msg" placeholder="Type a message…">
       <button id="send">Send</button>
     </div>
     <pre id="log" aria-live="polite"></pre>
+    <small>Tip: try policy = <b>relay</b>. If that works only with your TURN, your network needs TURN.</small>
   </div>
 
 <script>
@@ -37,23 +49,82 @@
   let peer = null;
   let conn = null;
 
-  // Use basic STUN; add your TURN here if needed
+  function parseUrls(list){
+    return list.split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(u => ({ urls: u }));
+  }
+
   function peerOptions(){
-    return {
-      debug: 2,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-          // { urls: 'turn:YOUR_TURN_HOST:3478', username: 'USER', credential: 'PASS' }
-        ]
-      }
-    };
+    const u = new URL(location.href);
+    const urlPolicy = u.searchParams.get('policy'); // allow ?policy=relay
+    const searchTurnUrls = u.searchParams.get('turn_urls') || '';
+    const searchTurnUser = u.searchParams.get('turn_user') || '';
+    const searchTurnPass = u.searchParams.get('turn_pass') || '';
+
+    const uiPolicy = $('#policy').value || '';
+    const uiTurnUrls = $('#turnUrls').value.trim() || searchTurnUrls;
+    const uiTurnUser = $('#turnUser').value || searchTurnUser;
+    const uiTurnPass = $('#turnPass').value || searchTurnPass;
+
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+    if (uiTurnUrls){
+      parseUrls(uiTurnUrls).forEach(s => {
+        if (uiTurnUser || uiTurnPass) s.username = uiTurnUser, s.credential = uiTurnPass;
+        iceServers.push(s);
+      });
+    }
+
+    const cfg = { iceServers };
+    const policy = (uiPolicy || urlPolicy || '').toLowerCase();
+    if (policy === 'relay' || policy === 'all') cfg.iceTransportPolicy = policy;
+
+    // You can also set custom PeerServer: ?peer_host=HOST&peer_port=443&peer_path=/peerjs&peer_secure=1
+    const host = u.searchParams.get('peer_host');
+    const port = u.searchParams.get('peer_port');
+    const path = u.searchParams.get('peer_path');
+    const secure = u.searchParams.get('peer_secure');
+
+    const opts = { debug: 2, config: cfg };
+    if (host || port || path || secure){
+      opts.host = host || location.hostname;
+      if (port) opts.port = Number(port);
+      if (path) opts.path = path;
+      if (secure != null) opts.secure = secure === '1' || secure === 'true';
+    }
+    return opts;
   }
 
   function wireConn(c){
     conn = c;
     log('[conn] wiring…');
+    // Try to peek into the RTCPeerConnection for ICE state logs
+    const pc = conn.peerConnection || conn._pc || conn._peerConnection;
+    if (pc){
+      log('[pc] found RTCPeerConnection, attaching ICE listeners');
+      pc.addEventListener('iceconnectionstatechange', () => log('[pc] iceConnectionState=' + pc.iceConnectionState));
+      pc.addEventListener('connectionstatechange', () => log('[pc] connectionState=' + pc.connectionState));
+      pc.addEventListener('signalingstatechange', () => log('[pc] signalingState=' + pc.signalingState));
+      if (pc.getStats) {
+        setInterval(async ()=> {
+          try{
+            const r = await pc.getStats();
+            r.forEach(s => {
+              if (s.type === 'candidate-pair' && s.selected) {
+                log(`[stats] selected: ${s.localCandidateId} ⇄ ${s.remoteCandidateId} (${s.state})`);
+              }
+            });
+          }catch(e){}
+        }, 4000);
+      }
+    } else {
+      log('[pc] RTCPeerConnection not exposed by PeerJS version');
+    }
+
     conn.on('open', () => log('[conn] OPEN ✓'));
     conn.on('data', d => log('[conn] data: ' + JSON.stringify(d)));
     conn.on('close', () => log('[conn] CLOSED'));
@@ -62,12 +133,11 @@
 
   $('#create').onclick = () => {
     if (peer) { try { peer.destroy(); } catch(e){} }
-    log('[host] creating Peer…');
-    peer = new Peer(peerOptions());
+    const opts = peerOptions();
+    log('[host] creating Peer… ' + JSON.stringify({host:opts.host,port:opts.port,path:opts.path,secure:opts.secure,policy:opts.config.iceTransportPolicy||'default'}));
+    peer = new Peer(opts);
 
-    const watchdog = setTimeout(() => log('[host] WARN: signaling watchdog fired'), 8000);
-
-    peer.on('open', id => { clearTimeout(watchdog); log('[host] open id = ' + id); });
+    peer.on('open', id => { log('[host] open id = ' + id); });
     peer.on('connection', c => { log('[host] incoming connection'); wireConn(c); });
     peer.on('error', e => log('[host] ERROR ' + (e?.message || e)));
     peer.on('disconnected', () => log('[host] DISCONNECTED'));
@@ -78,20 +148,17 @@
     if (!id) { log('[join] enter a Room ID'); $('#room').focus(); return; }
 
     if (peer) { try { peer.destroy(); } catch(e){} }
-    log('[join] creating Peer…');
-    peer = new Peer(peerOptions());
-
-    const watchdog = setTimeout(() => log('[join] WARN: signaling watchdog fired'), 8000);
+    const opts = peerOptions();
+    log('[join] creating Peer… ' + JSON.stringify({host:opts.host,port:opts.port,path:opts.path,secure:opts.secure,policy:opts.config.iceTransportPolicy||'default'}));
+    peer = new Peer(opts);
 
     peer.on('open', () => {
-      clearTimeout(watchdog);
       log('[join] peer open, connecting to ' + id);
       const c = peer.connect(id);
       wireConn(c);
 
-      // Join timeout if never opens
       setTimeout(() => {
-        if (!c.open) log('[join] ERROR: data connection timed out (wrong ID / host gone / network blocks WebRTC)');
+        if (!c.open) log('[join] ERROR: data connection timed out (wrong ID / host gone / network blocks WebRTC / TURN needed)');
       }, 10000);
     });
     peer.on('error', e => log('[join] ERROR ' + (e?.message || e)));
