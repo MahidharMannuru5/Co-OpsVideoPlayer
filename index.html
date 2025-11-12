@@ -206,6 +206,32 @@
   let ytAPIReady = false;
   let ytSyncTimer = null;
 
+  // ==== PeerJS config helper (server + ICE) ====
+  function getPeerOptions(){
+    // Optional: allow URL params to override server, e.g. ?peer_host=your.host&peer_port=443&peer_path=/peerjs
+    const u = new URL(location.href);
+    const host = u.searchParams.get('peer_host');
+    const port = u.searchParams.get('peer_port');
+    const path = u.searchParams.get('peer_path');
+    const secure = u.searchParams.get('peer_secure');
+    const opts = {};
+    if (host || port || path || secure){
+      opts.host = host || location.hostname;
+      if (port) opts.port = Number(port);
+      if (path) opts.path = path;
+      if (secure!=null) opts.secure = secure === '1' || secure === 'true';
+    }
+    // Add basic STUN (you may swap for your TURN here)
+    opts.config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+        // For strict NATs you need a TURN server here.
+      ]
+    };
+    return opts;
+  }
+
   // ===== Fit/Fill Toggle =====
   function setFitMode(mode){
     fitMode = mode;
@@ -276,7 +302,7 @@
       connectErr.textContent = '';
       showConnect('Creating room…');
       isHost = true;
-      peer = new Peer(); // You can also pass custom PeerServer config here
+      peer = new Peer(getPeerOptions()); // You can also pass custom PeerServer config here
 
       const watchdog = setTimeout(()=>{
         showError('Peer server unreachable','Could not establish a connection to the Peer server.');
@@ -306,7 +332,7 @@
     try{
       connectErr.textContent = '';
       showConnect('Joining room…');
-      peer = new Peer();
+      peer = new Peer(getPeerOptions());
 
       const watchdog = setTimeout(()=>{
         showError('Peer server unreachable','Could not connect to the Peer server.');
@@ -316,7 +342,16 @@
       peer.on('open', () => {
         clearTimeout(watchdog);
         conn = peer.connect(id);
-        conn.on('open', () => { wireConnection(); toSession('guest'); });
+        // Watchdog for stuck joining
+        const joinWatch = setTimeout(()=>{
+          if (!conn.open){
+            showError('Could not join', 'Timed out opening a data connection. Possible causes: wrong Room ID, host closed the page, or network blocks WebSocket/WebRTC.');
+          }
+        }, 10000);
+        conn.on('open', () => { clearTimeout(joinWatch); wireConnection(); toSession('guest'); });
+        conn.on('error', err => { showError('Connection error', err?.message || String(err)); });
+        conn.on('close', () => { showError('Connection closed','Peer disconnected. Reloading…'); setTimeout(()=>location.reload(), 1200); });
+      });
         conn.on('error', err => { showError('Connection error', err?.message || String(err)); });
         conn.on('close', () => { showError('Connection closed','Peer disconnected. Reloading…'); setTimeout(()=>location.reload(), 1200); });
       });
