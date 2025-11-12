@@ -1,178 +1,596 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>PeerJS ICE Diagnostic</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  body{font-family:system-ui,Arial,sans-serif;background:#0c0d0f;color:#e8eef3;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}
-  .card{background:#14171b;border:1px solid #232834;border-radius:14px;padding:16px;width:min(680px,92vw)}
-  .row{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
-  input,select{flex:1;min-width:200px;padding:10px;border-radius:10px;border:1px solid #232834;background:#0f1116;color:#e8eef3}
-  button{padding:10px 12px;border-radius:10px;border:1px solid #232834;background:#00e1ff;color:#001218;font-weight:700;cursor:pointer}
-  pre{background:#0f1116;border:1px solid #232834;border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:44vh;overflow:auto}
-  small{color:#97a3ae}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <meta charset="UTF-8" />
+  <title>Watch Together — Relay via TURN (YouTube, HLS, Chat)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    :root{
+      --bg:#0c0d0f; --panel:#14171b; --border:#232834;
+      --text:#e8eef3; --muted:#97a3ae; --accent:#00e1ff;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --kbd: 0px; --composer-h: 56px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      line-height:1.4; overflow:hidden;
+      padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+      overscroll-behavior:contain;
+    }
+    .hidden{display:none!important}
+
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+      background:#0f1116; color:var(--text); font-weight:600; font-size:14px;
+      cursor:pointer; line-height:1; white-space:nowrap;
+    }
+    .btn-primary{background:var(--accent); color:#001218; border-color:transparent}
+    .btn-sm{padding:10px 12px; min-width:96px}
+    input[type=text]{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+      background:#0f1116; color:#e8eef3; font-size:14px; line-height:1;
+    }
+    input::placeholder{color:var(--muted)}
+
+    .connectScreen{
+      height:100dvh; width:100vw; display:flex; align-items:center; justify-content:center; padding:16px;
+    }
+    .connect{
+      width:min(480px, 92vw);
+      background:var(--panel); border:1px solid var(--border); border-radius:14px;
+      padding:16px; display:flex; flex-direction:column; gap:10px;
+    }
+    .title{font-weight:800; color:var(--accent); text-align:center}
+    .sub{color:var(--muted); font-size:13px; text-align:center}
+    .row{display:flex; gap:8px; align-items:center}
+    .row input{flex:1}
+
+    .session{
+      height:100dvh; width:100vw; display:grid; gap:0;
+      grid-template-columns:1fr 1fr; grid-template-rows:1fr; position:fixed; inset:0;
+    }
+    @media (max-width: 680px){ .session{ grid-template-columns:1fr; grid-template-rows:1fr 1fr; } }
+    .left,.right{min-width:0; min-height:0}
+
+    .left{position:relative; background:#000}
+    .videoWrap{position:absolute; inset:0; background:#000; overflow:hidden}
+    video{position:absolute; inset:0; width:100%; height:100%; background:#000}
+    .left.mode-fill video{object-fit:cover}
+    .left.mode-fit  video{object-fit:contain}
+
+    #ytWrap{position:absolute; inset:0; display:none; background:#000}
+    #ytPlayer{position:absolute; inset:0; width:100%; height:100%; border:0}
+
+    .badges{
+      position:absolute; top:8px; left:8px; display:flex; gap:6px; z-index:2;
+      user-select:none; pointer-events:none;
+    }
+    .badge{
+      background:rgba(0,0,0,.45); color:#eaf2f7; border:1px solid rgba(255,255,255,.12);
+      padding:4px 8px; border-radius:999px; font-size:12px; backdrop-filter:saturate(120%) blur(6px);
+    }
+    .chip{
+      pointer-events:auto; user-select:none; cursor:pointer;
+      padding:4px 8px; border-radius:999px; font-size:12px; font-weight:700;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(0,0,0,.55); color:#eaf2f7;
+    }
+
+    .right{display:flex; flex-direction:column; background:var(--panel)}
+    .chat{flex:1; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); position:relative}
+    #messages{
+      position:absolute; top:0; left:0; right:0;
+      bottom: calc(var(--composer-h) + var(--kbd));
+      overflow-y:auto; overflow-x:hidden; padding:12px; background:#0f1116;
+      display:flex; flex-direction:column; gap:8px;
+      word-break:break-word; overflow-wrap:anywhere; white-space:pre-wrap;
+    }
+    .line{display:flex; width:100%}
+    .from-me{justify-content:flex-end}
+    .from-peer{justify-content:flex-start}
+    .from-sys{justify-content:center}
+    .bubble{
+      max-width:88%; padding:10px 12px; border-radius:14px; border:1px solid transparent;
+      box-shadow:0 1px 2px rgba(0,0,0,.25); font-size:14px;
+    }
+    .bubble.me{ background:rgba(0,212,179,.15); border-color:rgba(0,212,179,.35); color:#d9fff7; border-top-right-radius:6px; }
+    .bubble.peer{ background:rgba(255,114,210,.14); border-color:rgba(255,114,210,.35); color:#ffe6f6; border-top-left-radius:6px; }
+    .bubble.sys{ background:transparent; border-color:transparent; color:var(--muted); font-size:12px; padding:6px 8px; box-shadow:none; }
+
+    .composer{
+      position:absolute; left:0; right:0; bottom: var(--kbd);
+      display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel)
+    }
+    .composer input{flex:1}
+    .composer button{ padding:10px 12px; border-radius:10px; border:1px solid transparent; background:var(--accent); color:#001218; font-weight:700; }
+
+    .kbd-open #messages{ scroll-behavior:auto; }
+
+    .toasts{position:absolute; top:10px; right:10px; display:flex; flex-direction:column; gap:8px; z-index:5; width:min(360px, 90vw)}
+    .toast{display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border-radius:12px; border:1px solid var(--border); backdrop-filter:saturate(120%) blur(6px); box-shadow:0 2px 8px rgba(0,0,0,.35); background:rgba(0,0,0,.6); color:var(--text)}
+    .toast .title{font-weight:800; color:inherit; text-align:left}
+    .toast .msg{font-size:13px; color:var(--muted)}
+    .toast button{margin-left:auto; border:none; background:transparent; color:inherit; cursor:pointer; font-weight:800}
+    .toast.error{border-color:#ff6b6b; background:rgba(255,40,40,.12)}
+    .toast.warn{border-color:#ffd166; background:rgba(255,209,102,.12)}
+    .toast.info{border-color:#4da3ff; background:rgba(77,163,255,.12)}
+    .bubble.err{background:rgba(255,40,40,.08); border-color:rgba(255,40,40,.4); color:#ffdfe0; box-shadow:0 2px 6px rgba(255,40,40,.12)}
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
-  <div class="card">
-    <h2>PeerJS ICE Diagnostic</h2>
-    <div class="row">
-      <button id="create">Create (Host)</button>
-      <input id="room" placeholder="Room ID to join">
-      <button id="join">Join (Guest)</button>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <section id="connectScreen" class="connectScreen">
+    <div class="connect">
+      <div class="title">🎬 Watch Together</div>
+      <div class="sub">Desktop: side-by-side • Mobile: top/bottom</div>
+
+      <button id="createBtn" class="btn btn-primary">Create Room (Host)</button>
+
+      <div class="row">
+        <input id="roomId" type="text" placeholder="Room ID" autofocus />
+        <button id="joinBtn" class="btn btn-primary btn-sm">Join</button>
+      </div>
+
+      <div id="connectLog" class="sub"></div>
+      <div id="connectErr" class="sub" style="color:#ffb4b4"></div>
     </div>
-    <div class="row">
-      <select id="policy">
-        <option value="">iceTransportPolicy (default)</option>
-        <option value="all">all</option>
-        <option value="relay">relay (TURN only)</option>
-      </select>
-      <input id="turnUrls" placeholder="TURN URLs (comma): turns:turn.example.com:5349?transport=tcp,turn:turn.example.com:3478?transport=udp">
-      <input id="turnUser" placeholder="TURN username">
-      <input id="turnPass" placeholder="TURN credential">
+  </section>
+
+  <section id="sessionScreen" class="session hidden">
+    <div class="left mode-fill" id="leftPane">
+      <div class="videoWrap">
+        <div class="badges">
+          <span id="roleBadge" class="badge">Not connected</span>
+          <span id="statusBadge" class="badge">Idle</span>
+          <button id="fitToggle" class="chip" title="Toggle Fit/Fill">Fill</button>
+        </div>
+        <video id="player" playsinline crossorigin="anonymous"></video>
+        <div id="ytWrap"><div id="ytPlayer"></div></div>
+      </div>
     </div>
-    <div class="row">
-      <input id="msg" placeholder="Type a message…">
-      <button id="send">Send</button>
+
+    <div class="right">
+      <div class="chat">
+        <div id="messages"></div>
+        <div class="composer">
+          <input id="msgInput" type="text" placeholder="Message… (Host: /load, /yt, /vib)" />
+          <button id="sendBtn" class="btn btn-primary btn-sm">Send</button>
+        </div>
+      </div>
     </div>
-    <pre id="log" aria-live="polite"></pre>
-    <small>Tip: try policy = <b>relay</b>. If that works only with your TURN, your network needs TURN.</small>
-  </div>
+  </section>
 
 <script>
-(() => {
-  const $ = s => document.querySelector(s);
-  const log = (m) => { const l = $('#log'); l.textContent += m + '\n'; l.scrollTop = l.scrollHeight; };
+  // ---------- Elements ----------
+  const $ = id => document.getElementById(id);
+  const connectScreen = $('connectScreen');
+  const sessionScreen = $('sessionScreen');
+  const roleBadge = $('roleBadge');
+  const statusBadge = $('statusBadge');
+  const player = $('player');
+  const messages = $('messages');
+  const leftPane = $('leftPane');
+  const fitToggle = $('fitToggle');
+  const ytWrap = $('ytWrap');
+  const toasts = $('toasts');
+  const connectErr = $('connectErr');
 
-  let peer = null;
-  let conn = null;
+  let peer, conn, isHost = false;
+  let hls = null;
+  let videoLoaded = false;
+  let fitMode = null;
 
-  function parseUrls(list){
-    return list.split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .map(u => ({ urls: u }));
+  // YouTube state
+  let ytPlayer = null;
+  let ytActive = false;
+  let ytAPIReady = false;
+  let ytSyncTimer = null;
+
+  // ---------- Peer options with TURN relay (edit these) ----------
+  function getPeerOptions(){
+    // If you run your own PeerServer, you can also set:
+    // host: "peer.yourdomain.com", port: 443, path: "/peerjs", secure: true
+    return {
+      debug: 2,
+      config: {
+        // Force relay (TURN). Your network needs it based on the diagnostics.
+        iceTransportPolicy: 'relay',
+        iceServers: [
+          // Optional STUNs (harmless to keep)
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+
+          // ====== REPLACE THESE WITH YOUR TURN PROVIDER ======
+          // Provide both UDP and TCP/TLS variants for better success in corp networks.
+          { urls: 'turn:turn.yourdomain.com:3478?transport=udp', username: 'USER', credential: 'PASS' },
+          { urls: 'turn:turn.yourdomain.com:3478?transport=tcp', username: 'USER', credential: 'PASS' },
+          { urls: 'turns:turn.yourdomain.com:5349?transport=tcp', username: 'USER', credential: 'PASS' }
+          // If using a hosted TURN (Twilio/Xirsys/Metered/…),
+          // paste the urls/username/credential exactly as given.
+        ]
+      }
+    };
   }
 
-  function peerOptions(){
-    const u = new URL(location.href);
-    const urlPolicy = u.searchParams.get('policy'); // allow ?policy=relay
-    const searchTurnUrls = u.searchParams.get('turn_urls') || '';
-    const searchTurnUser = u.searchParams.get('turn_user') || '';
-    const searchTurnPass = u.searchParams.get('turn_pass') || '';
+  // ---------- UI helpers ----------
+  function showConnect(msg){ $('connectLog').textContent = msg || ''; }
+  function dbg(msg){
+    const el = $('connectLog');
+    el.textContent = (el.textContent ? el.textContent + "\n" : "") + msg;
+  }
+  function toSession(role){
+    connectScreen.classList.add('hidden');
+    sessionScreen.classList.remove('hidden');
+    sessionScreen.classList.toggle('role-host', role==='host');
+    sessionScreen.classList.toggle('role-guest', role!=='host');
+    roleBadge.textContent = role==='host' ? 'Host' : 'Guest';
+    if (role==='host') player.setAttribute('controls',''); else player.removeAttribute('controls');
+    if (fitMode==null) pickDefaultMode();
+  }
+  function addBubble(text, who){
+    const line = document.createElement('div');
+    line.className = 'line ' + (who==='me' ? 'from-me' : who==='peer' ? 'from-peer' : 'from-sys');
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (who==='me' ? 'me' : who==='peer' ? 'peer' : 'sys');
+    b.innerHTML = text;
+    line.appendChild(b); messages.appendChild(line);
+    messages.scrollTop = messages.scrollHeight;
+  }
+  function log(html, cls){
+    if (cls === 'sys') return;
+    if (cls === 'err') { addBubble(html, 'sys'); return; }
+    addBubble(html, cls==='me' ? 'me' : 'peer');
+  }
+  function setStatus(text){ statusBadge.textContent = text; }
+  function escapeHtml(s){ return s.replace(/[&<>\"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'' :'&#39;' }[m])) }
 
-    const uiPolicy = $('#policy').value || '';
-    const uiTurnUrls = $('#turnUrls').value.trim() || searchTurnUrls;
-    const uiTurnUser = $('#turnUser').value || searchTurnUser;
-    const uiTurnPass = $('#turnPass').value || searchTurnPass;
+  function pushToast(type, title, msg){
+    const t = document.createElement('div'); t.className = `toast ${type}`;
+    t.innerHTML = `<div class="title">${escapeHtml(title)}</div><div class="msg">${escapeHtml(msg||'')}</div>`;
+    const close = document.createElement('button'); close.setAttribute('aria-label','Dismiss'); close.textContent='✕';
+    close.onclick = ()=> t.remove(); t.appendChild(close);
+    toasts.appendChild(t); setTimeout(()=>{ t.remove(); }, 6000);
+  }
+  function showError(title, msg){ pushToast('error', title, msg||''); log(`<b>${escapeHtml(title)}:</b> ${escapeHtml(msg||'')}`, 'err'); }
+  function showInfo(title, msg){ pushToast('info', title, msg||''); }
 
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ];
-    if (uiTurnUrls){
-      parseUrls(uiTurnUrls).forEach(s => {
-        if (uiTurnUser || uiTurnPass) s.username = uiTurnUser, s.credential = uiTurnPass;
-        iceServers.push(s);
+  // ---------- Fit / Fill ----------
+  function setFitMode(mode){
+    fitMode = mode;
+    leftPane.classList.toggle('mode-fit',  mode==='fit');
+    leftPane.classList.toggle('mode-fill', mode==='fill');
+    fitToggle.textContent = mode === 'fit' ? 'Fit' : 'Fill';
+    fitToggle.title = mode === 'fit' ? 'No crop (bars may appear)' : 'Fill (may crop)';
+  }
+  function pickDefaultMode(){
+    const mobile = window.matchMedia('(max-width: 680px)').matches;
+    setFitMode(mobile ? 'fit' : 'fill');
+  }
+  fitToggle.addEventListener('click', ()=> setFitMode(fitMode === 'fit' ? 'fill' : 'fit'));
+  window.addEventListener('resize', ()=>{ if (fitMode==null) pickDefaultMode(); });
+
+  // ---------- Connect flow ----------
+  $('createBtn').onclick = () => {
+    if (!navigator.onLine){ showError('You are offline','Connect to the internet and try again.'); return; }
+    if (!window.Peer){ showError('PeerJS missing','The PeerJS script failed to load.'); return; }
+    try{
+      connectErr.textContent = ''; showConnect('Creating room…');
+      isHost = true; peer = new Peer(getPeerOptions());
+
+      const watchdog = setTimeout(()=>{
+        showError('Peer server unreachable','Could not establish a connection to the Peer server.');
+        connectErr.textContent = 'Peer server unreachable. Check network or try again.';
+      }, 8000);
+
+      peer.on('open', id => {
+        clearTimeout(watchdog);
+        showConnect(`Room ID: ${id}`); dbg('Peer open ✓');
       });
-    }
+      peer.on('connection', c => { conn = c; wireConnection(); toSession('host'); });
+      peer.on('error', err => { showError('Peer error', err?.message || String(err)); connectErr.textContent = err?.message || String(err); });
+      peer.on('disconnected', ()=> showError('Disconnected', 'The peer server connection dropped.'));
+    }catch(e){ showError('Create room failed', e?.message || String(e)); }
+  };
 
-    const cfg = { iceServers };
-    const policy = (uiPolicy || urlPolicy || '').toLowerCase();
-    if (policy === 'relay' || policy === 'all') cfg.iceTransportPolicy = policy;
+  $('joinBtn').onclick = tryJoin;
+  $('roomId').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
 
-    // You can also set custom PeerServer: ?peer_host=HOST&peer_port=443&peer_path=/peerjs&peer_secure=1
-    const host = u.searchParams.get('peer_host');
-    const port = u.searchParams.get('peer_port');
-    const path = u.searchParams.get('peer_path');
-    const secure = u.searchParams.get('peer_secure');
+  function tryJoin(){
+    const id = $('roomId').value.trim();
+    if (!id) { showConnect('Enter a room ID.'); connectErr.textContent = 'Room ID is required to join.'; $('roomId').focus(); showError('Missing Room ID','Please enter a Room ID and try again.'); return; }
+    if (!navigator.onLine){ showError('You are offline','Connect to the internet and try again.'); return; }
+    if (!window.Peer){ showError('PeerJS missing','The PeerJS script failed to load.'); return; }
+    isHost = false;
+    try{
+      connectErr.textContent = ''; showConnect('Joining room…');
+      peer = new Peer(getPeerOptions());
 
-    const opts = { debug: 2, config: cfg };
-    if (host || port || path || secure){
-      opts.host = host || location.hostname;
-      if (port) opts.port = Number(port);
-      if (path) opts.path = path;
-      if (secure != null) opts.secure = secure === '1' || secure === 'true';
-    }
-    return opts;
+      const watchdog = setTimeout(()=>{
+        showError('Peer server unreachable','Could not connect to the Peer server.');
+        connectErr.textContent = 'Peer server unreachable. Check network or try again.';
+      }, 8000);
+
+      peer.on('open', () => {
+        clearTimeout(watchdog);
+        conn = peer.connect(id);
+
+        // Join timeout if data connection never opens
+        const joinWatch = setTimeout(()=>{
+          if (!conn.open){
+            showError('Could not join', 'Timed out opening a data connection. Ensure TURN details are correct and reachable.');
+          }
+        }, 12000);
+
+        conn.on('open', () => { clearTimeout(joinWatch); wireConnection(); toSession('guest'); });
+        conn.on('error', err => { showError('Connection error', err?.message || String(err)); });
+        conn.on('close', () => { showError('Connection closed','Peer disconnected. Reloading…'); setTimeout(()=>location.reload(), 1200); });
+      });
+      peer.on('error', err => { clearTimeout(watchdog); showError('Peer error', err?.message || String(err)); connectErr.textContent = err?.message || String(err); });
+    }catch(e){ showError('Join failed', e?.message || String(e)); }
   }
 
-  function wireConn(c){
-    conn = c;
-    log('[conn] wiring…');
-    // Try to peek into the RTCPeerConnection for ICE state logs
-    const pc = conn.peerConnection || conn._pc || conn._peerConnection;
-    if (pc){
-      log('[pc] found RTCPeerConnection, attaching ICE listeners');
-      pc.addEventListener('iceconnectionstatechange', () => log('[pc] iceConnectionState=' + pc.iceConnectionState));
-      pc.addEventListener('connectionstatechange', () => log('[pc] connectionState=' + pc.connectionState));
-      pc.addEventListener('signalingstatechange', () => log('[pc] signalingState=' + pc.signalingState));
-      if (pc.getStats) {
-        setInterval(async ()=> {
-          try{
-            const r = await pc.getStats();
-            r.forEach(s => {
-              if (s.type === 'candidate-pair' && s.selected) {
-                log(`[stats] selected: ${s.localCandidateId} ⇄ ${s.remoteCandidateId} (${s.state})`);
-              }
-            });
-          }catch(e){}
-        }, 4000);
+  // ---------- Vibration ----------
+  function applyVibration(pattern) {
+    if (typeof navigator.vibrate === 'function') {
+      try{ navigator.vibrate(pattern); }catch(e){ showError('Vibration failed', e?.message || String(e)); }
+    } else {
+      showError('Vibration unsupported','This device/browser does not support the Vibration API.');
+    }
+  }
+
+  // ---------- DataConnection wiring ----------
+  function wireConnection(){
+    conn.on('data', data => {
+      try{
+        if (data.type === 'chat'){
+          log(`<b>Peer:</b> ${escapeHtml(data.text)}`, 'peer');
+        } else if (data.type === 'cmd' && data.cmd === 'load'){
+          loadMedia(data.url, false);
+        } else if (data.type === 'cmd' && data.cmd === 'yt'){
+          loadYouTubeById(data.videoId, false);
+        } else if (data.type === 'sync'){
+          applySync(data);
+        } else if (data.type === 'vibrate'){
+          applyVibration(data.pattern);
+        }
+      }catch(e){ showError('Incoming data error', e?.message || String(e)); }
+    });
+    conn.on('close', () => {
+      showError('Connection closed','Peer connection was closed. Reloading…');
+      setTimeout(()=> location.reload(), 1200);
+    });
+    conn.on('error', err => showError('Connection error', err?.message || String(err)));
+  }
+
+  // ---------- Chat & Commands ----------
+  $('sendBtn').onclick = sendMsg;
+  $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+
+  const secToMs = (val) => Math.round(parseFloat(val) * 1000);
+
+  function sendMsg(){
+    const el = $('msgInput'), text = el.value.trim();
+    if (!text) return;
+    if (!conn || (conn.open===false)) { showError('Not connected','Create or join a room before sending messages.'); return; }
+
+    if (isHost) {
+      if (text.startsWith('/load ')) {
+        const url = text.slice(6).trim();
+        if (!url){ showError('Missing URL','/load requires a media URL.'); el.value=''; return; }
+        try{ loadMedia(url, true); }catch(e){ showError('Load failed', e?.message || String(e)); }
+        el.value = ''; return;
+      }
+      if (text.startsWith('/yt ')) {
+        const url = text.slice(4).trim();
+        const vid = extractYouTubeId(url);
+        if (!vid) { showError('Invalid YouTube URL','Could not extract a video ID.'); el.value=''; return; }
+        loadYouTubeById(vid, true).catch(e=> showError('YouTube load failed', e?.message || String(e)));
+        el.value = ''; return;
+      }
+      if (text.startsWith('/vib ')) {
+        const payload = text.slice(5).trim();
+        if (!payload) { showError('Vibration payload missing','Provide seconds or a comma pattern.'); el.value = ''; return; }
+        let pattern;
+        if (payload.includes(',')) pattern = payload.split(',').map(sec => secToMs(sec));
+        else pattern = secToMs(payload);
+        if ((Array.isArray(pattern) && pattern.some(x=>Number.isNaN(x))) || (!Array.isArray(pattern) && Number.isNaN(pattern))) {
+          showError('Invalid vibration pattern','Use numbers in seconds, e.g., "/vib 0.1,0.1,0.2"'); el.value = ''; return;
+        }
+        try{ applyVibration(pattern); conn?.send({type:'vibrate', pattern}); }catch(e){ showError('Vibration failed', e?.message || String(e)); }
+        el.value = ''; return;
+      }
+    }
+
+    // Regular chat
+    try{
+      log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
+      conn?.send({type:'chat', text});
+    }catch(e){ showError('Send failed', e?.message || String(e)); }
+    el.value = '';
+  }
+
+  // ---------- Media (HTML5 + HLS) ----------
+  function cleanup(){
+    if (ytActive) destroyYouTube();
+    if (hls){ try{ hls.destroy(); }catch(e){} hls = null; }
+    player.pause(); player.removeAttribute('src'); player.load();
+    videoLoaded = false;
+  }
+
+  function loadMedia(url, broadcast){
+    cleanup();
+    setStatus('Loading…');
+
+    if (url.toLowerCase().includes('.m3u8')){
+      if (window.Hls && Hls.isSupported()){
+        try{
+          hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
+          hls.on(Hls.Events.ERROR, (_, data)=> { console.warn('hls.js error', data); showError('HLS error', (data && (data.details||data.type)) || 'Unknown HLS error'); });
+          hls.loadSource(url);
+          hls.attachMedia(player);
+          hls.on(Hls.Events.MANIFEST_PARSED, ()=>{ videoLoaded = true; setStatus('Ready'); if (!isHost) player.currentTime = 0; });
+        }catch(e){ showError('HLS setup failed', e?.message || String(e)); return; }
+      } else if (player.canPlayType('application/vnd.apple.mpegurl')){
+        player.src = url; player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
+      } else {
+        setStatus('HLS unsupported in this browser');
+        showError('HLS unsupported','This browser cannot play HLS (.m3u8) streams.');
+        return;
       }
     } else {
-      log('[pc] RTCPeerConnection not exposed by PeerJS version');
+      player.src = url;
+      player.onloadedmetadata = ()=>{ videoLoaded = true; setStatus('Ready'); };
     }
 
-    conn.on('open', () => log('[conn] OPEN ✓'));
-    conn.on('data', d => log('[conn] data: ' + JSON.stringify(d)));
-    conn.on('close', () => log('[conn] CLOSED'));
-    conn.on('error', e => log('[conn] ERROR ' + (e?.message || e)));
+    player.onerror = () => {
+      const err = player.error; const msg = err ? (err.message || `Media error code ${err.code}`) : 'Unknown video error';
+      showError('Video playback error', msg);
+    };
+
+    if (broadcast){
+      try{ conn?.send({type:'cmd', cmd:'load', url}); }catch(e){ showError('Broadcast failed', e?.message || String(e)); }
+    }
   }
 
-  $('#create').onclick = () => {
-    if (peer) { try { peer.destroy(); } catch(e){} }
-    const opts = peerOptions();
-    log('[host] creating Peer… ' + JSON.stringify({host:opts.host,port:opts.port,path:opts.path,secure:opts.secure,policy:opts.config.iceTransportPolicy||'default'}));
-    peer = new Peer(opts);
+  // ---------- Sync (host → guest) ----------
+  player.addEventListener('play', () => {
+    if (!isHost || !videoLoaded || ytActive) return;
+    conn?.send({type:'sync', action:'play', time:player.currentTime, media:'html5'});
+  });
+  player.addEventListener('pause', () => {
+    if (!isHost || !videoLoaded || ytActive) return;
+    conn?.send({type:'sync', action:'pause', time:player.currentTime, media:'html5'});
+  });
+  let seekTimer;
+  player.addEventListener('seeked', () => {
+    if (!isHost || !videoLoaded || ytActive) return;
+    clearTimeout(seekTimer);
+    seekTimer = setTimeout(()=> {
+      conn?.send({type:'sync', action:'seek', time:player.currentTime, media:'html5'});
+    }, 80);
+  });
 
-    peer.on('open', id => { log('[host] open id = ' + id); });
-    peer.on('connection', c => { log('[host] incoming connection'); wireConn(c); });
-    peer.on('error', e => log('[host] ERROR ' + (e?.message || e)));
-    peer.on('disconnected', () => log('[host] DISCONNECTED'));
-  };
+  function applySync(msg){
+    if (ytActive && ytPlayer){
+      const t = msg.time ?? 0;
+      const getT = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+      const diff = Math.abs(getT - t);
+      if (msg.action === 'play') { if (diff > 0.4) ytPlayer.seekTo(t, true); ytPlayer.playVideo && ytPlayer.playVideo(); }
+      else if (msg.action === 'pause') { if (diff > 0.4) ytPlayer.seekTo(t, true); ytPlayer.pauseVideo && ytPlayer.pauseVideo(); }
+      else if (msg.action === 'seek' || msg.action === 'time') { if (diff > 0.4) ytPlayer.seekTo(t, true); }
+      return;
+    }
+    if (!videoLoaded) return;
+    const diff = Math.abs(player.currentTime - msg.time);
+    if (diff > 0.4) player.currentTime = msg.time;
+    if (msg.action === 'play')  player.play().catch(()=>{});
+    if (msg.action === 'pause') player.pause();
+  }
 
-  $('#join').onclick = () => {
-    const id = $('#room').value.trim();
-    if (!id) { log('[join] enter a Room ID'); $('#room').focus(); return; }
+  // ---------- Keyboard-aware chat ----------
+  (function setupKeyboardAwareChat(){
+    const vv = window.visualViewport;
+    const composer = document.querySelector('.composer');
+    function setVar(name, val){ document.documentElement.style.setProperty(name, val); }
+    function measureComposer(){ if (composer) setVar('--composer-h', composer.offsetHeight + 'px'); }
+    function updateKeyboardOffset(){
+      const kb = vv ? Math.max(0, (window.innerHeight - vv.height - vv.offsetTop)) : 0;
+      const isOpen = kb > 120;
+      setVar('--kbd', (isOpen ? kb : 0) + 'px');
+      document.body.classList.toggle('kbd-open', isOpen);
+      measureComposer();
+    }
+    window.addEventListener('load', updateKeyboardOffset, { once:true });
+    window.addEventListener('resize', updateKeyboardOffset);
+    window.addEventListener('orientationchange', updateKeyboardOffset);
+    if (vv){ vv.addEventListener('resize', updateKeyboardOffset); vv.addEventListener('scroll', updateKeyboardOffset); }
+    const msgInput = document.getElementById('msgInput');
+    if (msgInput){ msgInput.addEventListener('focus', () => { setTimeout(updateKeyboardOffset, 0); }); msgInput.addEventListener('blur',  () => { setTimeout(updateKeyboardOffset, 0); }); }
+  })();
 
-    if (peer) { try { peer.destroy(); } catch(e){} }
-    const opts = peerOptions();
-    log('[join] creating Peer… ' + JSON.stringify({host:opts.host,port:opts.port,path:opts.path,secure:opts.secure,policy:opts.config.iceTransportPolicy||'default'}));
-    peer = new Peer(opts);
-
-    peer.on('open', () => {
-      log('[join] peer open, connecting to ' + id);
-      const c = peer.connect(id);
-      wireConn(c);
-
-      setTimeout(() => {
-        if (!c.open) log('[join] ERROR: data connection timed out (wrong ID / host gone / network blocks WebRTC / TURN needed)');
-      }, 10000);
+  // ---------- YouTube helpers (/yt) ----------
+  function injectYouTubeAPI(){
+    return new Promise((resolve, reject) => {
+      if (ytAPIReady) return resolve();
+      if (window.YT && window.YT.Player){ ytAPIReady = true; return resolve(); }
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      tag.onerror = () => { showError('YouTube API load failed','Check your network connection.'); reject(new Error('YT API load failed')); };
+      document.head.appendChild(tag);
+      window.onYouTubeIframeAPIReady = () => { ytAPIReady = true; resolve(); };
     });
-    peer.on('error', e => log('[join] ERROR ' + (e?.message || e)));
-  };
+  }
+  function extractYouTubeId(url){
+    try{
+      const u = new URL(url);
+      if (u.hostname.includes('youtu.be')) return u.pathname.slice(1);
+      if (u.searchParams.get('v')) return u.searchParams.get('v');
+      const path = u.pathname.split('/').filter(Boolean);
+      const idx = path.indexOf('shorts'); if (idx !== -1 && path[idx+1]) return path[idx+1];
+      const eidx = path.indexOf('embed'); if (eidx !== -1 && path[eidx+1]) return path[eidx+1];
+      return null;
+    }catch(e){ return null; }
+  }
+  async function loadYouTubeById(videoId, broadcast){
+    cleanup(); setStatus('Loading…'); await injectYouTubeAPI();
+    ytWrap.style.display = 'block'; player.style.display = 'none'; ytActive = true;
+    ytPlayer = new YT.Player('ytPlayer', {
+      videoId,
+      playerVars: { rel:0, modestbranding:1, playsinline:1, fs:1, controls: isHost ? 1 : 0, disablekb: isHost ? 0 : 1 },
+      events: {
+        onReady: () => { videoLoaded = true; setStatus('Ready'); },
+        onStateChange: (ev) => {
+          if (!isHost || !videoLoaded) return;
+          const t = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+          if (ev.data === YT.PlayerState.PLAYING){ conn?.send({type:'sync', action:'play', time:t, media:'yt'}); startYTSyncTicker(); }
+          else if (ev.data === YT.PlayerState.PAUSED){ conn?.send({type:'sync', action:'pause', time:t, media:'yt'}); stopYTSyncTicker(); }
+          else if (ev.data === YT.PlayerState.BUFFERING){ conn?.send({type:'sync', action:'seek', time:t, media:'yt'}); }
+          else if (ev.data === YT.PlayerState.ENDED){ stopYTSyncTicker(); }
+        },
+        onError: (ev) => {
+          const codes = {2:'Invalid parameter',5:'HTML5 playback issue',100:'Video not found/private',101:'Embedding disabled',150:'Embedding disabled'};
+          showError('YouTube error', codes[ev?.data] || `Player error code ${ev?.data}`);
+        }
+      }
+    });
+    if (broadcast){
+      try{ conn?.send({type:'cmd', cmd:'yt', videoId}); }catch(e){ showError('Broadcast failed', e?.message || String(e)); }
+    }
+  }
+  function destroyYouTube(){
+    stopYTSyncTicker();
+    try{ ytPlayer && ytPlayer.destroy && ytPlayer.destroy(); }catch(e){}
+    ytPlayer = null; ytActive = false; ytWrap.style.display = 'none'; player.style.display = 'block';
+  }
+  function startYTSyncTicker(){ stopYTSyncTicker(); ytSyncTimer = setInterval(()=>{ if (!isHost || !ytPlayer) return; const t = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0; conn?.send({type:'sync', action:'time', time:t, media:'yt'}); }, 2000); }
+  function stopYTSyncTicker(){ if (ytSyncTimer){ clearInterval(ytSyncTimer); ytSyncTimer = null; } }
 
-  $('#send').onclick = () => {
-    const txt = $('#msg').value.trim();
-    if (!txt) return;
-    if (!conn || !conn.open) { log('[send] no open connection'); return; }
-    conn.send({msg: txt, ts: Date.now()});
-    log('[send] ' + txt);
-    $('#msg').value = '';
-  };
-})();
+  // ---------- Init & Global ----------
+  window.addEventListener('load', pickDefaultMode);
+  window.addEventListener('error', (e) => { showError('Script error', e?.message || 'Unknown script error'); });
+  window.addEventListener('unhandledrejection', (e) => {
+    const msg = (e && e.reason && (e.reason.message || String(e.reason))) || 'Unhandled promise rejection';
+    showError('Unhandled error', msg);
+  });
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      if (!window.Peer){ showError('PeerJS not loaded','The PeerJS CDN may be blocked. Try a different network or allow the script.'); }
+    }, 1500);
+  });
+  window.addEventListener('offline', () => showError('You went offline','Reconnect to continue.'));
+  window.addEventListener('online', () => showInfo('Back online','You can create or join rooms again.'));
 </script>
 </body>
 </html>
