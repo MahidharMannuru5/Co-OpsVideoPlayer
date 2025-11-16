@@ -131,6 +131,18 @@
             background:rgba(255,114,210,.14); border-color:rgba(255,114,210,.35); color:#ffe6f6;
             border-top-left-radius:6px;
         }
+        
+        /* --- NEW SYSTEM MESSAGE STYLE --- */
+        .line.from-sys { 
+            justify-content: center; 
+            width: 100%;
+        }
+        .bubble.sys {
+            width: 100%; max-width: 100%; text-align: center;
+            background: rgba(151,163,174,.15); color: var(--muted);
+            border: none; box-shadow: none; font-size: 12px; font-style: italic;
+        }
+        /* --- END NEW STYLE --- */
 
         .composer{
             display:flex; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--panel);
@@ -159,6 +171,7 @@
         <button id="createBtn" class="btn btn-primary">Create Room (Host)</button>
 
         <div class="row">
+            <input id="guestNameInput" type="text" placeholder="Your Name" />
             <input id="roomId" type="text" placeholder="Room ID" autofocus />
             <button id="joinBtn" class="btn btn-primary btn-sm">Join</button>
         </div>
@@ -205,7 +218,12 @@
     const leftPane = $('leftPane');
     const fitToggle = $('fitToggle');
     
+    // --- UPDATED GLOBALS ---
     let peer, conn, isHost = false;
+    let myName = 'Host';    // Your name (default for host)
+    let peerName = 'Guest'; // The other person's name
+    // --- END UPDATES ---
+    
     let hls = null;
     let videoLoaded = false;
     let fitMode = null; 
@@ -237,54 +255,102 @@
         if (fitMode==null) pickDefaultMode();
     }
 
+    // --- UPDATED addBubble ---
     // Chat bubble helpers
     function addBubble(text, who){
         const line = document.createElement('div');
-        line.className = 'line ' + (who==='me' ? 'from-me' : 'from-peer');
+        
+        let lineClass, bubbleClass;
+        if (who === 'me') {
+            lineClass = 'from-me'; bubbleClass = 'me';
+        } else if (who === 'peer') {
+            lineClass = 'from-peer'; bubbleClass = 'peer';
+        } else { // 'sys'
+            lineClass = 'from-sys'; bubbleClass = 'sys';
+        }
+        
+        line.className = 'line ' + lineClass;
         const b = document.createElement('div');
-        b.className = 'bubble ' + (who==='me' ? 'me' : 'peer');
+        b.className = 'bubble ' + bubbleClass;
         b.innerHTML = text;
         line.appendChild(b);
         messages.appendChild(line);
         messages.scrollTop = messages.scrollHeight;
     }
     
+    // --- UPDATED log ---
     function log(html, cls){
         if (cls === 'sys') {
-            console.log("LOG: Suppressed system message: " + html.replace(/<[^>]*>?/gm, ''));
-            return;
-        } 
-        addBubble(html, cls==='me' ? 'me' : 'peer');
+            addBubble(html, 'sys');
+        } else {
+            addBubble(html, cls==='me' ? 'me' : 'peer');
+        }
     }
     function setStatus(text){ statusBadge.textContent = text; }
     function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':m==='"'?'&quot;':'&#39;' }[m])) }
 
     // ===== Connect flow =====
+    
+    // --- UPDATED createBtn.onclick (with Room Lock) ---
     $('createBtn').onclick = () => {
         isHost = true;
+        myName = 'Host'; // Host's name is set
         peer = new Peer();
         peer.on('open', id => {
             showConnect(`Room ID: ${id}`);
             console.log(`DEBUG: Room created. ID: ${id}`); 
         });
         peer.on('connection', c => {
-            conn = c; wireConnection(); toSession('host');
+            // --- ROOM LOCK LOGIC ---
+            // If 'conn' already exists and is open, this room is full.
+            if (conn && conn.open) {
+                console.warn(`WARN: Rejecting new connection from ${c.peer}, room is full.`);
+                // Wait for the new connection to open, send 'kick' message, then close it.
+                c.on('open', () => {
+                    c.send({ type: 'system', action: 'kick', reason: 'Room is full.' });
+                    setTimeout(() => c.close(), 500); // Give time for msg to send
+                });
+                return; // Do not accept this connection
+            }
+            // --- END LOCK LOGIC ---
+
+            conn = c; // This is the one and only guest
+            wireConnection(); 
+            toSession('host');
             console.log('DEBUG: Peer connection established (Host)'); 
         });
     };
 
+    // --- UPDATED joinBtn.onclick and tryJoin (with Name) ---
     $('joinBtn').onclick = tryJoin;
     $('roomId').addEventListener('keydown', e => { if (e.key === 'Enter') tryJoin(); });
 
     function tryJoin(){
         const id = $('roomId').value.trim();
-        if (!id) { showConnect('Enter a room ID.'); $('roomId').focus(); return; }
+        const name = $('guestNameInput').value.trim(); // <-- NEW: Get name
+
+        // --- NEW: Validate Name ---
+        if (!name) {
+            showConnect('Please enter your name.');
+            $('guestNameInput').focus();
+            return;
+        }
+        if (!id) { 
+            showConnect('Enter a room ID.'); 
+            $('roomId').focus(); 
+            return; 
+        }
+        
         isHost = false;
+        myName = name; // <-- NEW: Set your name
         peer = new Peer();
         peer.on('open', () => {
             conn = peer.connect(id);
             conn.on('open', () => {
-                wireConnection(); toSession('guest');
+                // We move toSession() and wireConnection() here
+                // to ensure 'conn' is fully open before proceeding
+                toSession('guest');
+                wireConnection(); 
                 console.log(`DEBUG: Joined room successfully (Guest)`); 
             });
         });
@@ -300,24 +366,68 @@
         }
     }
 
-    // ===== wireConnection =====
+    // --- UPDATED wireConnection (Name Exchange, Kick, Close Logic) ---
     function wireConnection(){
+        // --- NEW: Name Exchange on Open ---
+        // This runs as soon as the connection is stable.
+        conn.on('open', () => {
+            console.log('DEBUG: Connection open. Exchanging names.');
+            // Send my name to the peer
+            conn.send({ type: 'name', name: myName });
+        });
+        // --- END NEW ---
+
         conn.on('data', data => {
+            // --- NEW: Handle Name Message ---
+            if (data.type === 'name') {
+                peerName = data.name; // Store the peer's name
+                console.log(`DEBUG: Received peer name: ${peerName}`);
+                addBubble(`<i>System: ${escapeHtml(peerName)} has joined the room.</i>`, 'sys');
+                
+                // This is the host "seeing" the logged-in person
+                if (isHost) {
+                    // Host sends name back to confirm
+                    conn.send({ type: 'name', name: myName });
+                    setStatus(`Connected to ${peerName}`);
+                } else {
+                    setStatus(`Connected to Host`);
+                }
+                return; // Done with this data packet
+            }
+            
+            // --- NEW: Handle Kick Message (for guest) ---
+            if (data.type === 'system' && data.action === 'kick') {
+                alert(`You were disconnected: ${data.reason}`);
+                location.reload();
+                return;
+            }
+
+            // --- Handle other messages ---
             if (data.type === 'chat'){
-                log(`<b>Peer:</b> ${escapeHtml(data.text)}`, 'peer');
+                log(`<b>${escapeHtml(peerName)}:</b> ${escapeHtml(data.text)}`, 'peer'); // <-- USE peerName
             } else if (data.type === 'cmd' && data.cmd === 'load'){
                 loadMedia(data.url, false);
             } else if (data.type === 'sync'){
                 applySync(data);
             } 
-            // Handle incoming vibration command
             else if (data.type === 'vibrate'){
                 applyVibration(data.pattern);
             }
         });
+
         conn.on('close', () => {
-            console.warn('CONNECTION CLOSED: Peer connection was closed. Reloading page.');
-            location.reload();
+            console.warn(`CONNECTION CLOSED: ${peerName} connection was closed.`);
+            addBubble(`<i>System: ${escapeHtml(peerName)} has disconnected.</i>`, 'sys');
+            peerName = 'Guest'; // Reset to default
+            
+            if (isHost) {
+                conn = null; // <-- IMPORTANT: This "unlocks" the room
+                setStatus('Peer disconnected. Room is now open.');
+            } else {
+                // Guest was disconnected by host
+                alert('Host disconnected. Reloading page.');
+                location.reload();
+            }
         });
     }
 
@@ -327,6 +437,7 @@
     
     const secToMs = (val) => Math.round(parseFloat(val) * 1000);
 
+    // --- UPDATED sendMsg (uses myName) ---
     function sendMsg(){
         const el = $('msgInput'), text = el.value.trim();
         if (!text) return;
@@ -362,7 +473,7 @@
         }
         
         // --- REGULAR CHAT MESSAGE ---
-        log(`<b>You:</b> ${escapeHtml(text)}`, 'me');
+        log(`<b>${escapeHtml(myName)}:</b> ${escapeHtml(text)}`, 'me'); // <-- MODIFIED
         conn?.send({type:'chat', text});
         el.value = '';
     }
@@ -379,7 +490,7 @@
         setStatus('Loading…'); 
 
         if (url.toLowerCase().includes('.m3u8')){
-            if (window.Hls && Hls.isSupported()){
+            if (window.Hls && Hls.isSymmetricAlgorithm()){
                 hls = new Hls({ backBufferLength: 600, liveSyncDuration: 6, liveMaxLatencyDuration: 300 });
                 hls.on(Hls.Events.ERROR, (_, data)=> console.warn('hls.js error', data));
                 hls.loadSource(url);
